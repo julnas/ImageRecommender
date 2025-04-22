@@ -1,5 +1,6 @@
 import os
 from PIL import Image
+from typing import Generator
 
 class ImageLoader:
     def __init__(self, db, base_dir: str):
@@ -47,7 +48,20 @@ class ImageLoader:
         return None
 
 
-    def image_generator(self):
+    def image_generator(self) -> Generator[tuple[int, Image.Image], None, None]:
         """
         Generator that yields for each valid image.
+        
+        Yields:
+        A tuple of (image_id, image) for each successfully loaded image
         """
+        
+        #go throught all image IDs stored in the database
+        for image_id in self.db.get_all_image_ids():
+
+            #try loading the image corresponding to the current ID
+            img = self.load_image(image_id)
+
+            #if image loading was successful, yield it
+            if img is not None:
+                yield image_id, img  #yields a tuple of image ID and the PIL Image object
