@@ -19,7 +19,7 @@ class Database:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS images (
                 image_id INTEGER PRIMARY KEY,
-                file_path TEXT NOT NULL,
+                file_path TEXT NOT NULL
             );
         """)
         self.connection.commit()  #save changes
