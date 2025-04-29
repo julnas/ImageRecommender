@@ -2,75 +2,48 @@
 #imports
 import numpy as np
 import cv2
+from scipy.spatial.distance import cosine
 
 #code
-def reshape_image(image):
-    image = image.reshape(-1, 3)
-    return image
+def calculate_histogram(image, bins=16):
+    # Erstelle ein Array für die Histogramme, mit der Anzahl der Bins
+    hist_r = cv2.calcHist([image], [0], None, [bins], [0, 256])
+    hist_g = cv2.calcHist([image], [1], None, [bins], [0, 256])
+    hist_b = cv2.calcHist([image], [2], None, [bins], [0, 256])
 
-def get_histogram(pixellist, color):
-    'This method initialises an array that counts all the values of one color to be used in a histogramm'
-    rgb_array = np.zeros(256)
+    # Normalisieren der Histogramme
+    hist_r /= hist_r.sum()
+    hist_g /= hist_g.sum()
+    hist_b /= hist_b.sum()
 
-    for pixel in pixellist:
-        rgb_array[pixel[color]] += 1 #der R-Wert der der Pixel hat wird um 1 erhöht
+    return hist_r, hist_g, hist_b
 
-    return rgb_array
-
-def get_pixelcount(image):
-    pixel_count = image.shape[0] * image.shape[1]
-    return pixel_count
-
-def normalise_histogram(histogram, pixel_count):
-    normalised_value = histogram / pixel_count
-    return normalised_value
-
-
-def calculate_similarity(histograms):
-    histogram_picture1, histogram_picture2 = histograms
-    similarity_sum = 0
-    i = 0
-
-    while i <= 255:
-        similarity_sum += (histogram_picture1[i] - histogram_picture2[i]) ** 2
-        i += 1
-
-    similarity = 1 / (1+ similarity_sum)
-
+def calculate_similarity(hist1, hist2):
+    similarity = 1 - cosine(hist1.flatten(), hist2.flatten())
     return similarity
 
-def complete_similarity(picture1, picture2):
-    pixelcount_image1 = get_pixelcount(picture1)
-    pixelcount_image2 = get_pixelcount(picture2)
-
-    histogram_red1 = get_histogram(picture1, 0)
-    histogram_red1 =normalise_histogram(histogram_red1, pixelcount_image1)
-    histogram_red2 = get_histogram(picture2, 0)
-    histogram_red2 = normalise_histogram(histogram_red2, pixelcount_image2)
-    red_histograms = (histogram_red1, histogram_red2)
-
-    histogram_green1 = get_histogram(picture1, 1)
-    histogram_green1 = normalise_histogram(histogram_green1, pixelcount_image1)
-    histogram_green2 = get_histogram(picture2, 1)
-    histogram_green2 = normalise_histogram(histogram_green2, pixelcount_image2)
-    green_histograms = (histogram_green1, histogram_green2)
-
-    histogram_blue1 = get_histogram(picture1, 2)
-    histogram_blue1 =normalise_histogram(histogram_blue1, pixelcount_image1)
-    histogram_blue2 = get_histogram(picture2, 2)
-    histogram_blue2 = normalise_histogram(histogram_blue2, pixelcount_image2)
-    blue_histograms = (histogram_blue1, histogram_blue2)
-
-    red_similarity = calculate_similarity(red_histograms)
-    green_similarity = calculate_similarity(green_histograms)
-    blue_similarity = calculate_similarity(blue_histograms)
-
+def complete_similarity(picture1, picture2, bins=16):
+    # Berechne die Histogramme effizient
+    hist_r1, hist_g1, hist_b1 = calculate_histogram(picture1, bins)
+    hist_r2, hist_g2, hist_b2 = calculate_histogram(picture2, bins)
+    
+    # Berechne die Ähnlichkeit für jeden Kanal
+    red_similarity = calculate_similarity(hist_r1, hist_r2)
+    green_similarity = calculate_similarity(hist_g1, hist_g2)
+    blue_similarity = calculate_similarity(hist_b1, hist_b2)
+    
+    # Gesamtähnlichkeit berechnen (mit den typischen Gewichtungen für RGB)
     compl_similarity = (0.3 * red_similarity + 0.59 * green_similarity + 0.11 * blue_similarity)
+    print(f"Red: {red_similarity}, Green: {green_similarity}, Blue: {blue_similarity}")
 
     return compl_similarity
 
 
-filename1 = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/Testbilder-20250328/dove-2516641_1920.jpg"
-filename2 = '/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/Testbilder-20250328/hummingbird-2139278_1920.jpg'
+filename1 = "/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg"
+filename2 = '/Users/jule/Downloads/red-background.png'
 
 image1 = cv2.imread(filename1)
+image2 = cv2.imread(filename2)
+
+similarity = complete_similarity(image1, image2, bins=16)
+print("The similarity between image 1 and 2 is:", similarity)
