@@ -43,5 +43,5 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
     print("Done DB scan and fill hehe :)")
 
 if __name__ == "__main__":
-    base_dir = "/Volumes/BigData03/data/DIV2k/DIV2K_train_HR"
+    base_dir = "/Volumes/BigData03/data"
     scan_and_fill_database(base_dir)
