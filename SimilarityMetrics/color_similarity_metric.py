@@ -90,9 +90,9 @@ class ColorSimilarity:
             
             similarities.append((image_id, compl_similarity))
 
-            # Sort descending by similarity
-            similarities.sort(key=lambda x: x[1], reverse=True)
-            return [img_id for img_id, _ in similarities[:best_k]]
+        # Sort descending by similarity
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        return [img_id for img_id, _ in similarities[:best_k]]
     
 
 '''

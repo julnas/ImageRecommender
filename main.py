@@ -2,7 +2,7 @@ from image_recommender.database import Database
 from image_recommender.image_loader import ImageLoader
 from image_recommender.recomender import Recommender
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
-
+from PIL import Image
 import os
 
 def main():
@@ -11,6 +11,10 @@ def main():
 
     #harddrive
     base_dir = "/Volumes/BigData03/data"  
+    
+    #image to compare
+    comparing_image_path = "/Users/belizsenol/Desktop/Unknown.jpeg"  
+    input_image = Image.open(comparing_image_path).convert("RGB")
 
     #db connectiom
     db = Database(db_path)
@@ -28,12 +32,11 @@ def main():
     #recommender system
     recommender = Recommender(db, loader, metrics)
 
-    #input parameters
-    input_id = 1  #the id of the picture we want to compare
-    best_k = 5     # How many similar images we want
+    #how many similar images we want
+    best_k = 5     
 
     #get recommendations
-    results = recommender.recommend(input_id, best_k=best_k)
+    results = recommender.recommend(input_image, best_k=best_k)
 
     #results
     for metric_name, image_ids in results.items():
