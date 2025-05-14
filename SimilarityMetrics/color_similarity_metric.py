@@ -17,7 +17,7 @@ class ColorSimilarity:
     # (default: 16). After computing, the histograms are normalized so that their sum equals 1.
     # This ensures the histograms are comparable across different image sizes.
     # --------------------------------------------------
-    def calculate_histogram(image, bins=16):
+    def calculate_histogram(self, image, bins=16):
         # Calculate histograms for Red, Green, and Blue channels
         hist_r = cv2.calcHist([image], [0], None, [bins], [0, 256])
         hist_g = cv2.calcHist([image], [1], None, [bins], [0, 256])
@@ -37,19 +37,31 @@ class ColorSimilarity:
     # Cosine similarity measures the cosine of the angle between two non-zero vectors.
     # It returns a value between -1 (completely different) and 1 (identical).
     # --------------------------------------------------
-    def calculate_similarity(hist1, hist2):
+    def calculate_similarity(self, hist1, hist2):
         similarity = 1 - cosine(hist1.flatten(), hist2.flatten())
         return similarity
     
     # --------------------------------------------------
     # Function: compute_feature
     # Description:
-    # This function creates the histograms after converting the image to a numpy array.
+    # converts a given input image (originally in PIL format) into a array
+    # It then extracts color histograms for each channel
     # ---------------------------------------------------
     def compute_feature(self, image):
+        if image is None:
+            return None
+        
+        #convert PIL → NumPy array (RGB)
         image_np = np.array(image)
-        return self.calculate_histogram(image_np)
-    
+
+        #it has to be uint8
+        if image_np.dtype != np.uint8:
+            image_np = image_np.astype(np.uint8)
+            
+        #convert RGB to BGR for OpenCV compatibility
+        image_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        return self.calculate_histogram(image_bgr, bins = self.bins)
+
     # --------------------------------------------------
     # Function: find_similar
     # Description:
