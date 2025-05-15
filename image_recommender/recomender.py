@@ -15,21 +15,18 @@ class Recommender:
         self.loader = loader
         self.metrics = metrics  
 
-    def recommend(self, input_image_id: int, best_k: int = 1) -> Dict[str, list]:
+    def recommend(self, input_image, best_k: int = 1) -> Dict[str, list]:
         """
         Finds the best similar image for a given input image ID across all specified similarity metrics.
         u can change the best k to any number u want. right now its 1, cuz we get an output per metric.
 
         Parameters:
-        input_image_id: ID of the input image
+        Input_image: path to image
         best_k: number of top similar images to return per metrik (so later we should change the code, so the metrics will be combined and we get the best 5 images overall)
 
         Returns:
         A list of top-k image IDs
         """
-        
-        #oad input image
-        input_image = self.loader.load_image(input_image_id)
 
         results = {}
 
