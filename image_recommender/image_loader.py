@@ -47,6 +47,14 @@ class ImageLoader:
         # If anything fails, return None
         return None
 
+    def load_image_by_path(self, full_path):
+        """ Loads an image directly from a full file path (for setup_db). """
+        if os.path.exists(full_path):
+            return Image.open(full_path).convert("RGB")
+        else:
+            print(f"File does not exist: {full_path}")
+            return None
+
 
     def image_generator(self) -> Generator[tuple[int, Image.Image], None, None]:
         """
