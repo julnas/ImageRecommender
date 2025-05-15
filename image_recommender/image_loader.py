@@ -1,5 +1,5 @@
 import os
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from typing import Generator
 
 class ImageLoader:
@@ -46,6 +46,21 @@ class ImageLoader:
 
         # If anything fails, return None
         return None
+
+    def load_image_by_path(self, full_path):
+        """ 
+        Loads an image directly from a full file path (for setup_db). 
+        if loading fails, it returns None.
+        """
+        if not os.path.exists(full_path):
+            print(f"File does not exist: {full_path}")
+            return None
+
+        try:
+            return Image.open(full_path).convert("RGB")
+        except (UnidentifiedImageError, OSError) as e:
+            print(f"Cant open image {full_path}: {e}")
+            return None
 
 
     def image_generator(self) -> Generator[tuple[int, Image.Image], None, None]:
