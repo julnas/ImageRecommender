@@ -28,7 +28,7 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
     loader = ImageLoader(db, base_dir)
     color_similarity = ColorSimilarity(loader)
 
-    max_images = 500 #temporary so we dont load all 500K images (would take to long) 
+    max_images = 50000 #temporary so we dont load all 500K images (would take to long) 
 
     #scan the base_dir for image files
     for root, _, files in os.walk(base_dir):

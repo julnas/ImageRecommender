@@ -2,6 +2,7 @@
 import numpy as np
 import cv2
 from scipy.spatial.distance import cosine
+import pickle
 
 
 class ColorSimilarity:
@@ -75,20 +76,28 @@ class ColorSimilarity:
     # --------------------------------------------------
     def find_similar(self, query_hist, best_k=5):
         similarities = []
-        for image_id, image in self.loader.image_generator():
-            calculated_hist = self.compute_feature(image)
-            if calculated_hist is None:
-                continue
-            
+        
+        #get all images with color histograms from the database
+        self.loader.db.cursor.execute("SELECT image_id, color_histogram FROM images WHERE color_histogram IS NOT NULL;")
+        rows = self.loader.db.cursor.fetchall()
+
+        for idx, (image_id, hist_blob) in enumerate(rows):
+            db_hist = pickle.loads(hist_blob) #unpickle the histogram
+        
             # Calculate cosine similarity for each color channel
-            red_similarity = self.calculate_similarity(query_hist[0], calculated_hist[0])
-            green_similarity = self.calculate_similarity(query_hist[1], calculated_hist[1])
-            blue_similarity = self.calculate_similarity(query_hist[2], calculated_hist[2])
+            red_similarity = self.calculate_similarity(query_hist[0], db_hist[0])
+            green_similarity = self.calculate_similarity(query_hist[1], db_hist[1])
+            blue_similarity = self.calculate_similarity(query_hist[2], db_hist[2])
             
             # Combine the similarities using weighted average (standard RGB luminance weights)
             compl_similarity = (0.3 * red_similarity + 0.59 * green_similarity + 0.11 * blue_similarity)
             
+            #append every image id and the similarity to a list, so we can compsare them later
             similarities.append((image_id, compl_similarity))
+            
+            #counting the pictures
+            if idx % 100 == 0:
+                print(f"Compared: {idx} piktures")
 
         # Sort descending by similarity
         similarities.sort(key=lambda x: x[1], reverse=True)
