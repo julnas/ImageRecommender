@@ -17,7 +17,10 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
         CREATE TABLE IF NOT EXISTS images (
             image_id INTEGER PRIMARY KEY,
             file_path TEXT NOT NULL,
-            color_histogram BLOB
+            color_histogram BLOB,
+            width INTEGER,
+            height INTEGER,
+            file_size INTEGER
         );
     """)
     db.connection.commit()
@@ -51,10 +54,18 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
                 #serialize histogram
                 hist_blob = pickle.dumps(histogram)
                 
+                # get resolution
+                width, height = image.size if image else (None, None)
+
+                # get file size
+                file_size = os.path.getsize(full_path) if os.path.exists(full_path) else None
+
+                
                 #import the image into the database
                 db.cursor.execute("""
-                    INSERT INTO images (image_id, file_path, color_histogram) VALUES (?, ?, ?);
-                """, (image_id, relative_path, hist_blob))
+                    INSERT INTO images (image_id, file_path, color_histogram, width, height, file_size) 
+                    VALUES (?, ?, ?, ?, ?);
+                """, (image_id, relative_path, hist_blob, width, height, file_size))
                 
                 print(f"Image {image_id} done ") #to see how much we already loaded
 
