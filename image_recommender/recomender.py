@@ -1,19 +1,20 @@
 from typing import Dict
 
+
 class Recommender:
     def __init__(self, db, loader, metrics: Dict[str, object]):
         """
-        coordinates loading the input image, 
+        coordinates loading the input image,
         aplying similarity measures, and returning results.
 
         Parameters:
         db: instance of DatabaseManager
         loader: instance of ImageLoader
-        metrics: dictionary of similarity metric instances 
+        metrics: dictionary of similarity metric instances
         """
         self.db = db
         self.loader = loader
-        self.metrics = metrics  
+        self.metrics = metrics
 
     def recommend(self, input_image, best_k: int = 1) -> Dict[str, list]:
         """
@@ -30,10 +31,14 @@ class Recommender:
 
         results = {}
 
-        #for each metric, compute similarity and retrieve best-k matches
+        # for each metric, compute similarity and retrieve best-k matches
         for metric_name, metric in self.metrics.items():
-            query_vector = metric.compute_feature(input_image)  #compute feature vector for the input image
-            similar_image_ids = metric.find_similar(query_vector, best_k=best_k)    #search for similar images
-            results[metric_name] = similar_image_ids        #safe the results
+            query_vector = metric.compute_feature(
+                input_image
+            )  # compute feature vector for the input image
+            similar_image_ids = metric.find_similar(
+                query_vector, best_k=best_k
+            )  # search for similar images
+            results[metric_name] = similar_image_ids  # safe the results
 
         return results
