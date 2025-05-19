@@ -1,6 +1,7 @@
 import sqlite3
 from typing import Optional, List
 
+
 class Database:
     def __init__(self, db_path: str):
         """
@@ -9,8 +10,12 @@ class Database:
         Parameters:
         db_path: path to the database file
         """
-        self.connection = sqlite3.connect(db_path)  #connect to the SQLite DB file  -> SQLite safes how i can find a pic and the things i know about the  pic
-        self.cursor = self.connection.cursor()       #create a cursor to execute SQL commands
+        self.connection = sqlite3.connect(
+            db_path
+        )  # connect to the SQLite DB file  -> SQLite safes how i can find a pic and the things i know about the  pic
+        self.cursor = (
+            self.connection.cursor()
+        )  # create a cursor to execute SQL commands
 
     def get_image_path(self, image_id: int):
         """
@@ -22,7 +27,9 @@ class Database:
         Returns:
         The file path as a string
         """
-        self.cursor.execute("SELECT file_path FROM images WHERE image_id = ?", (image_id,))
+        self.cursor.execute(
+            "SELECT file_path FROM images WHERE image_id = ?", (image_id,)
+        )
         result = self.cursor.fetchone()
         return result[0] if result else None
 
