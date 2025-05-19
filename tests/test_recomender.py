@@ -3,6 +3,7 @@ from image_recommender.image_loader import ImageLoader
 from image_recommender.recomender import Recommender
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
 
+
 def test_recommender_outputs_top_k():
     db = Database("images.db")
     loader = ImageLoader(db, base_dir="/Volumes/BigData03/data")
@@ -17,8 +18,9 @@ def test_recommender_outputs_top_k():
         assert len(results["color"]) == 3
     db.close()
 
-'''
+
+"""
 use: 
 cd ImageRecommender/
 PYTHONPATH=. pytest tests/
-'''
+"""
