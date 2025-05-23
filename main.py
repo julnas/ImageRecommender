@@ -2,6 +2,7 @@ from image_recommender.database import Database
 from image_recommender.image_loader import ImageLoader
 from image_recommender.recomender import Recommender
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
+from SimilarityMetrics.embeddings_similarity_metric import EmbeddingSimilarity
 from PIL import Image
 import os
 
@@ -26,7 +27,7 @@ def main():
     # initialize similarity metrics
     metrics = {
         "color": ColorSimilarity(loader),
-        # "embedding": EmbeddingSimilarity(), #they dont exist yet
+        "embedding": EmbeddingSimilarity(), #they dont exist yet
         # "hash": HashingSimilarity()         #they dont exist yet
     }
 
