@@ -18,7 +18,7 @@ class ColorSimilarity:
     # (default: 16). After computing, the histograms are normalized so that their sum equals 1.
     # This ensures the histograms are comparable across different image sizes.
     # --------------------------------------------------
-    def calculate_histogram(self, image, bins=16):
+    def calculate_rgb_histogram(self, image, bins=16):
         # Calculate histograms for Red, Green, and Blue channels
         hist_r = cv2.calcHist([image], [0], None, [bins], [0, 256])
         hist_g = cv2.calcHist([image], [1], None, [bins], [0, 256])
@@ -30,6 +30,20 @@ class ColorSimilarity:
         hist_b /= hist_b.sum()
 
         return hist_r, hist_g, hist_b
+    
+    def calculate_hsl_histogram(self, image, bins=16):
+        # convert BGR to HLS (OpenCV uses HLS not HSL – Reihenfolge: H, L, S)
+        hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+
+        hist_h = cv2.calcHist([hls_image], [0], None, [bins], [0, 180])  # Hue in OpenCV: 0–179
+        hist_l = cv2.calcHist([hls_image], [1], None, [bins], [0, 256])
+        hist_s = cv2.calcHist([hls_image], [2], None, [bins], [0, 256])
+
+        hist_h /= hist_h.sum()
+        hist_l /= hist_l.sum()
+        hist_s /= hist_s.sum()
+
+        return hist_h, hist_s, hist_l
 
     # --------------------------------------------------
     # Function: calculate_similarity
@@ -61,7 +75,9 @@ class ColorSimilarity:
 
         # convert RGB to BGR for OpenCV compatibility
         image_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        return self.calculate_histogram(image_bgr, bins=self.bins)
+        rgb_hist = self.calculate_histogram(image_bgr, bins=self.bins)
+        hsl_hist = self.calculate_hsl_histogram(image_bgr, bins=self.bins)
+        return rgb_hist, hsl_hist
 
     # --------------------------------------------------
     # Function: find_similar
@@ -77,53 +93,109 @@ class ColorSimilarity:
     def find_similar(self, query_hist, best_k=5):
         similarities = []
 
-        # get all images with color histograms from the database
+        # Entpacke Query-Histogramm
+        query_rgb, query_hsl = query_hist
+
+        # Lade alle gespeicherten Histogramme aus der Datenbank
         self.loader.db.cursor.execute(
             "SELECT image_id, color_histogram FROM images WHERE color_histogram IS NOT NULL;"
         )
         rows = self.loader.db.cursor.fetchall()
 
         for idx, (image_id, hist_blob) in enumerate(rows):
-            db_hist = pickle.loads(hist_blob)  # unpickle the histogram
+            # Entpacke das RGB- und HSL-Histogramm
+            db_rgb, db_hsl = pickle.loads(hist_blob)
 
-            # Calculate cosine similarity for each color channel
-            red_similarity = self.calculate_similarity(query_hist[0], db_hist[0])
-            green_similarity = self.calculate_similarity(query_hist[1], db_hist[1])
-            blue_similarity = self.calculate_similarity(query_hist[2], db_hist[2])
+            # RGB-Ähnlichkeiten berechnen
+            red_similarity = self.calculate_similarity(query_rgb[0], db_rgb[0])
+            green_similarity = self.calculate_similarity(query_rgb[1], db_rgb[1])
+            blue_similarity = self.calculate_similarity(query_rgb[2], db_rgb[2])
+            rgb_similarity = 0.3 * red_similarity + 0.59 * green_similarity + 0.11 * blue_similarity
 
-            # Combine the similarities using weighted average (standard RGB luminance weights)
-            compl_similarity = (
-                0.3 * red_similarity + 0.59 * green_similarity + 0.11 * blue_similarity
-            )
+            # HSL-Ähnlichkeiten berechnen (H, S, L)
+            h_similarity = self.calculate_similarity(query_hsl[0], db_hsl[0])
+            s_similarity = self.calculate_similarity(query_hsl[1], db_hsl[1])
+            l_similarity = self.calculate_similarity(query_hsl[2], db_hsl[2])
+            hsl_similarity = 0.4 * h_similarity + 0.3 * s_similarity + 0.3 * l_similarity
 
-            # append every image id and the similarity to a list, so we can compsare them later
+            # Kombinierte Gesamtähnlichkeit
+            compl_similarity = 0.5 * rgb_similarity + 0.5 * hsl_similarity
+
+            # Bild-ID und Ähnlichkeit speichern
             similarities.append((image_id, compl_similarity))
 
-            # counting the pictures
+            # Optional: Fortschritt anzeigen
             if idx % 100 == 0:
-                print(f"Compared: {idx} piktures")
+                print(f"Verglichen: {idx} Bilder")
 
-        # Sort descending by similarity
+        # Nach Ähnlichkeit sortieren (absteigend)
         similarities.sort(key=lambda x: x[1], reverse=True)
+
+        # Top-k Bild-IDs zurückgeben
         return [img_id for img_id, _ in similarities[:best_k]]
 
 
-"""
+
+
 # --------------------------------------------------
-# Load two images from file paths
+# Import & Instanz
 # --------------------------------------------------
-filename1 = "/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg"
-filename2 = '/Users/jule/Downloads/red-background.png'
+from PIL import Image
 
-# Read the images using OpenCV (in BGR format)
-image1 = cv2.imread(filename1)
-image2 = cv2.imread(filename2)
+# Lade die Bilder mit PIL (für Kompatibilität)
+image1 = Image.open("/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg").convert("RGB")
+image2 = Image.open("/Users/jule/Downloads/red-background.png").convert("RGB")
 
-# Convert BGR (OpenCV default) to RGB
-image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
-image2 = cv2.cvtColor(image2, cv2.COLOR_BGR2RGB)
+# Instanz der Farbsimilaritätsklasse
+color_sim = ColorSimilarity(loader=None, bins=16)
 
-# Compute and print the overall similarity
-similarity = complete_similarity(image1, image2, bins=16)
-print("The similarity between image 1 and 2 is:", similarity)
-"""
+# --------------------------------------------------
+# Features berechnen (RGB + HSL)
+# --------------------------------------------------
+
+# compute_feature muss jetzt beide Histogrammtypen liefern
+def compute_combined_feature(image):
+    # RGB-Feature
+    image_np = np.array(image)
+    if image_np.dtype != np.uint8:
+        image_np = image_np.astype(np.uint8)
+    image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+
+    rgb_hist = color_sim.calculate_histogram(image_bgr, bins=color_sim.bins)
+    hsl_hist = color_sim.calculate_hsl_histogram(image_bgr, bins=color_sim.bins)
+    return (rgb_hist, hsl_hist)
+
+# Berechne Features
+feature1 = compute_combined_feature(image1)
+feature2 = compute_combined_feature(image2)
+
+# --------------------------------------------------
+# Ähnlichkeit berechnen (RGB + HSL kombiniert)
+# --------------------------------------------------
+
+# RGB-Vergleich
+r1, g1, b1 = feature1[0]
+r2, g2, b2 = feature2[0]
+rgb_sim = (
+    0.3 * color_sim.calculate_similarity(r1, r2)
+    + 0.59 * color_sim.calculate_similarity(g1, g2)
+    + 0.11 * color_sim.calculate_similarity(b1, b2)
+)
+
+# HSL-Vergleich
+h1, s1, l1 = feature1[1]
+h2, s2, l2 = feature2[1]
+hsl_sim = (
+    0.4 * color_sim.calculate_similarity(h1, h2)
+    + 0.3 * color_sim.calculate_similarity(s1, s2)
+    + 0.3 * color_sim.calculate_similarity(l1, l2)
+)
+
+# Gesamtscore
+final_similarity = 0.5 * rgb_sim + 0.5 * hsl_sim
+
+# --------------------------------------------------
+# Ausgabe
+# --------------------------------------------------
+print("Ähnlichkeit zwischen Bild 1 und Bild 2:", final_similarity)
+
