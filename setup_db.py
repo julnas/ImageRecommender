@@ -2,6 +2,8 @@ import os
 import pickle
 from image_recommender.database import Database
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
+#from SimilarityMetrics.embeddings_similarity_metric import embedding_similarity
+#from SimilarityMetrics.hashing_similarity_metric import HashingSimilarity
 from image_recommender.image_loader import ImageLoader
 
 
@@ -12,6 +14,7 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
     u can use this one time at the gebinning
     """
     db = Database(db_path)
+    metric_data = {}  # image_id → dict of metrics
 
     # create table with ID and file path
     db.cursor.execute(
@@ -35,7 +38,7 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
     color_similarity = ColorSimilarity(loader)
 
     max_images = (
-        250000  # temporary so we dont load all 500K images (would take to long)
+        2000  # temporary so we dont load all 500K images (would take to long)
     )
 
     # scan the base_dir for image files
@@ -55,11 +58,15 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
                 # load image
                 image = loader.load_image_by_path(full_path)
 
-                # compute histogram
-                histogram = color_similarity.compute_feature(image)
+                # compute features
+                color_histogram = color_similarity.compute_feature(image)
+                #embedding_vector = embedding_similarity.compute_embedding(image)
+                #hash_vector = HashingSimilarity.compute_hash(image)
 
-                # serialize histogram
-                hist_blob = pickle.dumps(histogram)
+                # serialize for DB
+                color_blob = pickle.dumps(color_histogram)
+                #embedding_blob = pickle.dumps(embedding_vector)
+                #hash_blob = pickle.dumps(hash_vector)
 
                 # get resolution
                 width, height = image.size if image else (None, None)
@@ -73,10 +80,17 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
                 db.cursor.execute(
                     """
                     INSERT INTO images (image_id, file_path, color_histogram, width, height, file_size) 
-                    VALUES (?, ?, ?, ?, ?);
+                    VALUES (?, ?, ?, ?, ?, ?);
                 """,
-                    (image_id, relative_path, hist_blob, width, height, file_size),
+                    (image_id, relative_path, color_blob, width, height, file_size),
                 )
+                
+                # for the pickle file
+                metric_data[image_id] = {
+                    "color_histogram": color_histogram.flattern().tolist() if hasattr(color_histogram, 'tolist') else color_histogram #,
+                    #"embedding": embedding_vector.flattern().tolist() if hasattr(embedding_vector, 'tolist') else embedding_vector,
+                    #"hash": hash_vector.flattern().tolist() if hasattr(hash_vector, 'tolist') else hash_vector
+                    }
 
                 print(f"Image {image_id} done ")  # to see how much we already loaded
 
@@ -84,7 +98,11 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
 
     db.connection.commit()
     db.close()
-    print("Done DB scan and fill hehe :)")
+    
+    with open("image_metrics.pkl", "wb") as f:
+        pickle.dump(metric_data, f)
+    
+    print(" DB and pickle file done hehe :)")
 
 
 if __name__ == "__main__":
