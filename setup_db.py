@@ -81,8 +81,8 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
                 # import the image into the database
                 db.cursor.execute(
                     """
-                    INSERT INTO images (image_id, file_path, color_histogram, width, height, file_size) 
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT INTO images (image_id, file_path, width, height, file_size) 
+                    VALUES (?, ?, ?, ?, ?);
                 """,
                     (image_id, relative_path, color_blob, width, height, file_size),
                 )
