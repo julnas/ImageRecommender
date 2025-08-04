@@ -57,29 +57,6 @@ class ColorSimilarity:
         return similarity
 
     # --------------------------------------------------
-    # Function: compute_feature
-    # Description:
-    # converts a given input image (originally in PIL format) into a array
-    # It then extracts color histograms for each channel
-    # ---------------------------------------------------
-    def compute_feature(self, image):
-        if image is None:
-            return None
-
-        # convert PIL → NumPy array (RGB)
-        image_np = np.array(image)
-
-        # it has to be uint8
-        if image_np.dtype != np.uint8:
-            image_np = image_np.astype(np.uint8)
-
-        # convert RGB to BGR for OpenCV compatibility
-        image_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        rgb_hist = self.calculate_histogram(image_bgr, bins=self.bins)
-        hsl_hist = self.calculate_hsl_histogram(image_bgr, bins=self.bins)
-        return rgb_hist, hsl_hist
-
-    # --------------------------------------------------
     # Function: find_similar
     # Description:
     # This function calculates the overall color similarity and IDs for every Image.
@@ -133,6 +110,17 @@ class ColorSimilarity:
 
         # Top-k Bild-IDs zurückgeben
         return [img_id for img_id, _ in similarities[:best_k]]
+    
+    def compute_combined_feature(image):
+        # RGB-Feature
+        image_np = np.array(image)
+        if image_np.dtype != np.uint8:
+            image_np = image_np.astype(np.uint8)
+        image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+
+        rgb_hist = color_sim.calculate_rgb_histogram(image_bgr, bins=color_sim.bins)
+        hsl_hist = color_sim.calculate_hsl_histogram(image_bgr, bins=color_sim.bins)
+        return (rgb_hist, hsl_hist)
 
 
 
@@ -154,16 +142,7 @@ color_sim = ColorSimilarity(loader=None, bins=16)
 # --------------------------------------------------
 
 # compute_feature muss jetzt beide Histogrammtypen liefern
-def compute_combined_feature(image):
-    # RGB-Feature
-    image_np = np.array(image)
-    if image_np.dtype != np.uint8:
-        image_np = image_np.astype(np.uint8)
-    image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
 
-    rgb_hist = color_sim.calculate_histogram(image_bgr, bins=color_sim.bins)
-    hsl_hist = color_sim.calculate_hsl_histogram(image_bgr, bins=color_sim.bins)
-    return (rgb_hist, hsl_hist)
 
 # Berechne Features
 feature1 = compute_combined_feature(image1)
