@@ -1,5 +1,6 @@
 import os
 import pickle
+import numpy as np
 from image_recommender.database import Database
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
 #from SimilarityMetrics.embeddings_similarity_metric import embedding_similarity
@@ -59,7 +60,8 @@ def scan_and_fill_database(base_dir: str, db_path: str = "images.db"):
                 image = loader.load_image_by_path(full_path)
 
                 # compute features
-                color_histogram = color_similarity.compute_feature(image)
+                color = color_similarity.compute_feature(image)
+                color_histogram = np.concatenate([arr.flatten() for arr in color]).tolist()
                 #embedding_vector = embedding_similarity.compute_embedding(image)
                 #hash_vector = HashingSimilarity.compute_hash(image)
 
