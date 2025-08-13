@@ -3,6 +3,7 @@ from image_recommender.image_loader import ImageLoader
 from image_recommender.recomender import Recommender
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
 from SimilarityMetrics.embeddings_similarity_metric import EmbeddingSimilarity
+from SimilarityMetrics.hashing_similarity_metric import HashingSimilarity
 from PIL import Image
 import os
 
@@ -28,7 +29,7 @@ def main():
     metrics = {
         "color": ColorSimilarity(loader),
         "embedding": EmbeddingSimilarity(), #they dont exist yet
-        # "hash": HashingSimilarity()         #they dont exist yet
+        "hash": HashingSimilarity()         #they dont exist yet
     }
 
     # recommender system
