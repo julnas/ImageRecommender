@@ -25,12 +25,31 @@ def main():
     # ImageLoader
     loader = ImageLoader(db, base_dir)
 
+
+    # Embeddings (IVFPQ)
+    emb = EmbeddingSimilarity(loader)
+    # First time (build):
+    # emb.build_ivfpq_index("indexes/emb_ivfpq.faiss", nlist=4096, m=16)
+    # Normal operation (load):
+    # emb.load_ivfpq_index("indexes/emb_ivfpq.faiss")
+
+    # Color (HNSW)
+    color = ColorSimilarity(loader, bins=16)
+    # First time (build):
+    # color.build_hnsw_index("indexes/color_hnsw.bin", m=16, ef_construction=200, ef=100)
+    # Normal operation (load):
+    # color.load_hnsw_index("indexes/color_hnsw.bin", ef=100)
+
+    # Hash
+    hashing = HashingSimilarity(loader)
+
+
     # initialize similarity metrics
     metrics = {
-        "color": ColorSimilarity(loader),
-        "embedding": EmbeddingSimilarity(), #they dont exist yet
-        "hash": HashingSimilarity()         #they dont exist yet
-    }
+    "embedding": emb,
+    "color": color,
+    "hash": hashing,
+    }   
 
     # recommender system
     recommender = Recommender(db, loader, metrics)

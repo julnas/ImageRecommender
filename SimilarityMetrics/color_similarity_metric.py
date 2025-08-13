@@ -1,180 +1,221 @@
-# imports
-import numpy as np
-import cv2
-from scipy.spatial.distance import cosine
+"""Color-based similarity with optional HNSW acceleration.
+
+This metric computes RGB and HSL histograms per image, normalizes them,
+and (optionally) concatenates them into a single feature vector for HNSW.
+If an index is available it will be used; otherwise we fall back to a
+weighted per-channel cosine similarity computed by scanning the database.
+
+DB expectation:
+- Table `images` has a column `color_histogram` that stores a pickled tuple:
+  (rgb_hist, hsl_hist), where each is a 3-tuple of numpy arrays.
+"""
+
 import pickle
+from typing import Any, Optional, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
+from scipy.spatial.distance import cosine
 
 
 class ColorSimilarity:
-    def __init__(self, loader, bins=16):
+    """Color-based similarity using RGB and HSL histograms."""
+
+    def __init__(self, loader: Any, bins: int = 16) -> None:
+        """
+        Parameters
+        ----------
+        loader : Any
+            ImageLoader instance providing `loader.db` for DB access.
+        bins : int
+            Number of bins per channel (RGB and H, S, L).
+        """
         self.loader = loader
         self.bins = bins
 
-    # --------------------------------------------------
-    # Function: calculate_histogram
-    # Description:
-    # This function computes color histograms for each channel (Red, Green, Blue)
-    # of the given image. Each histogram is divided into a specified number of bins
-    # (default: 16). After computing, the histograms are normalized so that their sum equals 1.
-    # This ensures the histograms are comparable across different image sizes.
-    # --------------------------------------------------
-    def calculate_rgb_histogram(self, image, bins=16):
-        # Calculate histograms for Red, Green, and Blue channels
-        hist_r = cv2.calcHist([image], [0], None, [bins], [0, 256])
-        hist_g = cv2.calcHist([image], [1], None, [bins], [0, 256])
-        hist_b = cv2.calcHist([image], [2], None, [bins], [0, 256])
+        # Optional HNSW index (set via load_hnsw_index or build_hnsw_index).
+        self.hnsw = None  # type: ignore[assignment]
+        self._dim = bins * 6  # r, g, b, h, s, l → total features
 
-        # Normalize histograms so that the sum equals 1
-        hist_r /= hist_r.sum()
-        hist_g /= hist_g.sum()
-        hist_b /= hist_b.sum()
+    # --------------------------- Feature extraction ---------------------------
 
+    def _ensure_pil(self, image: Any) -> Image.Image:
+        """Convert supported inputs (path/np.ndarray/PIL) to a PIL.Image."""
+        if isinstance(image, Image.Image):
+            return image
+        if isinstance(image, str):
+            return Image.open(image)
+        if isinstance(image, np.ndarray):
+            return Image.fromarray(image)
+        raise TypeError("Supported input types: PIL.Image, str (path), numpy.ndarray")
+
+    def calculate_rgb_histogram(self, image_bgr: np.ndarray) -> Tuple[np.ndarray, ...]:
+        """Compute normalized RGB histograms on a BGR OpenCV image."""
+        # OpenCV uses BGR channel order; map to R/G/B explicitly.
+        hist_r = cv2.calcHist([image_bgr], [2], None, [self.bins], [0, 256])
+        hist_g = cv2.calcHist([image_bgr], [1], None, [self.bins], [0, 256])
+        hist_b = cv2.calcHist([image_bgr], [0], None, [self.bins], [0, 256])
+
+        for h in (hist_r, hist_g, hist_b):
+            s = float(h.sum())
+            h /= s if s > 0 else 1.0
         return hist_r, hist_g, hist_b
-    
-    def calculate_hsl_histogram(self, image, bins=16):
-        # convert BGR to HLS (OpenCV uses HLS not HSL – Reihenfolge: H, L, S)
-        hls_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
 
-        hist_h = cv2.calcHist([hls_image], [0], None, [bins], [0, 180])  # Hue in OpenCV: 0–179
-        hist_l = cv2.calcHist([hls_image], [1], None, [bins], [0, 256])
-        hist_s = cv2.calcHist([hls_image], [2], None, [bins], [0, 256])
+    def calculate_hsl_histogram(self, image_bgr: np.ndarray) -> Tuple[np.ndarray, ...]:
+        """Compute normalized H, S, L histograms (OpenCV uses HLS order)."""
+        hls = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HLS)
+        hist_h = cv2.calcHist([hls], [0], None, [self.bins], [0, 180])  # Hue: 0..179
+        hist_l = cv2.calcHist([hls], [1], None, [self.bins], [0, 256])
+        hist_s = cv2.calcHist([hls], [2], None, [self.bins], [0, 256])
 
-        hist_h /= hist_h.sum()
-        hist_l /= hist_l.sum()
-        hist_s /= hist_s.sum()
-
+        for h in (hist_h, hist_s, hist_l):
+            s = float(h.sum())
+            h /= s if s > 0 else 1.0
+        # Return order (H, S, L)
         return hist_h, hist_s, hist_l
 
-    # --------------------------------------------------
-    # Function: calculate_similarity
-    # Description:
-    # This function calculates the similarity between two histograms using cosine similarity.
-    # Cosine similarity measures the cosine of the angle between two non-zero vectors.
-    # It returns a value between -1 (completely different) and 1 (identical).
-    # --------------------------------------------------
-    def calculate_similarity(self, hist1, hist2):
-        similarity = 1 - cosine(hist1.flatten(), hist2.flatten())
-        return similarity
+    def compute_feature(self, image: Any) -> Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]]:
+        """
+        Compute the color feature as a tuple of histograms.
 
-    # --------------------------------------------------
-    # Function: find_similar
-    # Description:
-    # This function calculates the overall color similarity and IDs for every Image.
-    # It first computes the color histograms for each image (Red, Green, Blue),
-    # then measures the similarity per channel using cosine similarity.
-    # Finally, it combines these similarities using weighted contributions (as used in luminance calculations):
-    # Red (30%), Green (59%), Blue (11%).
-    # it appendds the id and the similarity to a list and sorts it.
-    # The top-k most similar images are returned.
-    # --------------------------------------------------
-    def find_similar(self, query_hist, best_k=5):
-        similarities = []
+        Returns
+        -------
+        (rgb_hist, hsl_hist) :
+            Each is a tuple of three numpy arrays (one per channel).
+        """
+        img = self._ensure_pil(image).convert("RGB")
+        img_np = np.asarray(img, dtype=np.uint8)
+        image_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-        # Entpacke Query-Histogramm
-        query_rgb, query_hsl = query_hist
+        rgb_hist = self.calculate_rgb_histogram(image_bgr)
+        hsl_hist = self.calculate_hsl_histogram(image_bgr)
+        return rgb_hist, hsl_hist
 
-        # Lade alle gespeicherten Histogramme aus der Datenbank
-        self.loader.db.cursor.execute(
-            "SELECT image_id, color_histogram FROM images WHERE color_histogram IS NOT NULL;"
+    def _feature_to_vec(self, feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]]) -> np.ndarray:
+        """Flatten (r,g,b,h,s,l) histograms into a single L2-normalized vector."""
+        (r, g, b), (h, s, l) = feature
+        vec = np.hstack(
+            [r.ravel(), g.ravel(), b.ravel(), h.ravel(), s.ravel(), l.ravel()]
+        ).astype(np.float32, copy=False)
+        n = float(np.linalg.norm(vec))
+        if n > 0.0:
+            vec /= n
+        return vec
+
+    # ---------------------------- Similarity helpers --------------------------
+
+    @staticmethod
+    def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
+        """Cosine similarity between flattened histograms."""
+        return 1.0 - float(cosine(a.ravel(), b.ravel()))
+
+    # --------------------------- HNSW build / load ----------------------------
+
+    def build_hnsw_index(
+        self,
+        index_path: str,
+        m: int = 16,
+        ef_construction: int = 200,
+        ef: int = 100,
+    ) -> None:
+        """
+        Build an HNSW index from all color histograms in the DB and persist it.
+
+        Parameters
+        ----------
+        index_path : str
+            File path to save the HNSW index.
+        m : int
+            HNSW graph connectivity (higher = better recall, more memory).
+        ef_construction : int
+            HNSW construction parameter (quality/speed trade-off).
+        ef : int
+            Query-time search breadth (higher = better recall, slower).
+        """
+        import hnswlib  # lazy import
+
+        cur = self.loader.db.cursor
+        cur.execute(
+            "SELECT image_id, color_histogram FROM images "
+            "WHERE color_histogram IS NOT NULL;"
         )
-        rows = self.loader.db.cursor.fetchall()
+        rows = cur.fetchall()
+
+        ids, vecs = [], []
+        for image_id, blob in rows:
+            rgb_hsl = pickle.loads(blob)
+            vecs.append(self._feature_to_vec(rgb_hsl))
+            ids.append(image_id)
+
+        x = np.vstack(vecs).astype(np.float32, copy=False)
+        ids = np.asarray(ids, dtype=np.int64)
+
+        index = hnswlib.Index(space="cosine", dim=self._dim)
+        index.init_index(max_elements=x.shape[0], ef_construction=ef_construction, M=m)
+        index.add_items(x, ids)
+        index.set_ef(ef)
+        index.save_index(index_path)
+
+        self.hnsw = index
+
+    def load_hnsw_index(self, index_path: str, ef: int = 100) -> None:
+        """Load a persisted HNSW index from disk."""
+        import hnswlib  # lazy import
+
+        index = hnswlib.Index(space="cosine", dim=self._dim)
+        index.load_index(index_path)
+        index.set_ef(ef)
+        self.hnsw = index
+
+    # --------------------------------- Search --------------------------------
+
+    def find_similar(
+        self,
+        query_feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]],
+        best_k: int = 5,
+    ) -> list[int]:
+        """
+        Return top-k image IDs similar to the given color feature.
+
+        If an HNSW index is loaded, use it. Otherwise, perform a weighted
+        cosine similarity scan per channel via the database.
+        """
+        # Fast path: HNSW available → search in vector space.
+        if self.hnsw is not None:
+            q = self._feature_to_vec(query_feature).reshape(1, -1)
+            labels, _ = self.hnsw.knn_query(q, k=best_k)
+            return [int(i) for i in labels[0]]
+
+        # Fallback: DB scan with per-channel weighted scheme.
+        similarities: list[tuple[int, float]] = []
+        query_rgb, query_hsl = query_feature
+
+        cur = self.loader.db.cursor
+        cur.execute(
+            "SELECT image_id, color_histogram FROM images "
+            "WHERE color_histogram IS NOT NULL;"
+        )
+        rows = cur.fetchall()
 
         for idx, (image_id, hist_blob) in enumerate(rows):
-            # Entpacke das RGB- und HSL-Histogramm
             db_rgb, db_hsl = pickle.loads(hist_blob)
 
-            # RGB-Ähnlichkeiten berechnen
-            red_similarity = self.calculate_similarity(query_rgb[0], db_rgb[0])
-            green_similarity = self.calculate_similarity(query_rgb[1], db_rgb[1])
-            blue_similarity = self.calculate_similarity(query_rgb[2], db_rgb[2])
-            rgb_similarity = 0.3 * red_similarity + 0.59 * green_similarity + 0.11 * blue_similarity
+            r_sim = self._cosine_sim(query_rgb[0], db_rgb[0])
+            g_sim = self._cosine_sim(query_rgb[1], db_rgb[1])
+            b_sim = self._cosine_sim(query_rgb[2], db_rgb[2])
+            rgb_sim = 0.30 * r_sim + 0.59 * g_sim + 0.11 * b_sim
 
-            # HSL-Ähnlichkeiten berechnen (H, S, L)
-            h_similarity = self.calculate_similarity(query_hsl[0], db_hsl[0])
-            s_similarity = self.calculate_similarity(query_hsl[1], db_hsl[1])
-            l_similarity = self.calculate_similarity(query_hsl[2], db_hsl[2])
-            hsl_similarity = 0.4 * h_similarity + 0.3 * s_similarity + 0.3 * l_similarity
+            h_sim = self._cosine_sim(query_hsl[0], db_hsl[0])
+            s_sim = self._cosine_sim(query_hsl[1], db_hsl[1])
+            l_sim = self._cosine_sim(query_hsl[2], db_hsl[2])
+            hsl_sim = 0.40 * h_sim + 0.30 * s_sim + 0.30 * l_sim
 
-            # Kombinierte Gesamtähnlichkeit
-            compl_similarity = 0.5 * rgb_similarity + 0.5 * hsl_similarity
+            total = 0.50 * rgb_sim + 0.50 * hsl_sim
+            similarities.append((image_id, total))
 
-            # Bild-ID und Ähnlichkeit speichern
-            similarities.append((image_id, compl_similarity))
-
-            # Optional: Fortschritt anzeigen
             if idx % 100 == 0:
-                print(f"Verglichen: {idx} Bilder")
+                print(f"Compared: {idx} images")
 
-        # Nach Ähnlichkeit sortieren (absteigend)
-        similarities.sort(key=lambda x: x[1], reverse=True)
-
-        # Top-k Bild-IDs zurückgeben
+        similarities.sort(key=lambda t: t[1], reverse=True)
         return [img_id for img_id, _ in similarities[:best_k]]
-    
-    def compute_combined_feature(image):
-        # RGB-Feature
-        image_np = np.array(image)
-        if image_np.dtype != np.uint8:
-            image_np = image_np.astype(np.uint8)
-        image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
-
-        rgb_hist = color_sim.calculate_rgb_histogram(image_bgr, bins=color_sim.bins)
-        hsl_hist = color_sim.calculate_hsl_histogram(image_bgr, bins=color_sim.bins)
-        return (rgb_hist, hsl_hist)
-
-
-
-
-# --------------------------------------------------
-# Import & Instanz
-# --------------------------------------------------
-from PIL import Image
-
-# Lade die Bilder mit PIL (für Kompatibilität)
-image1 = Image.open("/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg").convert("RGB")
-image2 = Image.open("/Users/jule/Downloads/red-background.png").convert("RGB")
-
-# Instanz der Farbsimilaritätsklasse
-color_sim = ColorSimilarity(loader=None, bins=16)
-
-# --------------------------------------------------
-# Features berechnen (RGB + HSL)
-# --------------------------------------------------
-
-# compute_feature muss jetzt beide Histogrammtypen liefern
-
-
-# Berechne Features
-feature1 = compute_combined_feature(image1)
-feature2 = compute_combined_feature(image2)
-
-# --------------------------------------------------
-# Ähnlichkeit berechnen (RGB + HSL kombiniert)
-# --------------------------------------------------
-
-# RGB-Vergleich
-r1, g1, b1 = feature1[0]
-r2, g2, b2 = feature2[0]
-rgb_sim = (
-    0.3 * color_sim.calculate_similarity(r1, r2)
-    + 0.59 * color_sim.calculate_similarity(g1, g2)
-    + 0.11 * color_sim.calculate_similarity(b1, b2)
-)
-
-# HSL-Vergleich
-h1, s1, l1 = feature1[1]
-h2, s2, l2 = feature2[1]
-hsl_sim = (
-    0.4 * color_sim.calculate_similarity(h1, h2)
-    + 0.3 * color_sim.calculate_similarity(s1, s2)
-    + 0.3 * color_sim.calculate_similarity(l1, l2)
-)
-
-# Gesamtscore
-final_similarity = 0.5 * rgb_sim + 0.5 * hsl_sim
-
-# --------------------------------------------------
-# Ausgabe
-# --------------------------------------------------
-print("Ähnlichkeit zwischen Bild 1 und Bild 2:", final_similarity)
-

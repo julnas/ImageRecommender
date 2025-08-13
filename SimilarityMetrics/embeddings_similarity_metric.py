@@ -1,113 +1,189 @@
-# implement the embeddings similarity metric
-#imports 
+"""Embedding-based similarity with optional FAISS IVFPQ acceleration.
+
+This metric extracts a 512-D feature from a ResNet18 backbone. Vectors are
+L2-normalized so cosine similarity equals inner product (IP). If a FAISS
+IVFPQ index is available it will be used; otherwise we fall back to a
+database scan with cosine similarity.
+
+DB expectation:
+- Table `images` has a column `embedding` that stores a pickled numpy array
+  (float32, shape (512,)).
+"""
+
+
+import pickle
+from typing import Any, Optional
+
 import numpy as np
-import matplotlib.pyplot as plt
-import os
-from tqdm import tqdm
 import torch
 import torch.nn as nn
-from torchvision import models, transforms
-from torch.utils.data import DataLoader, Dataset
-import cv2
 from PIL import Image
 from scipy.spatial.distance import cosine
-import pickle
+from torchvision import models, transforms
+
 
 class EmbeddingSimilarity:
-    def __init__(self, device=None):
-        """
-        Initializes the EmbeddingSimilarity class with a pre-trained model.
+    """Deep embedding similarity powered by a ResNet18 backbone."""
 
-        Parameters:
-        model: A pre-trained model for generating image embeddings.
+    def __init__(
+        self,
+        loader: Any,
+        device: Optional[str] = None,
+        normalize: bool = True,
+    ) -> None:
         """
+        Parameters
+        ----------
+        loader : Any
+            ImageLoader instance providing `loader.db` for DB access.
+        device : str, optional
+            "cuda" or "cpu". If None, choose automatically.
+        normalize : bool
+            L2-normalize embeddings to make cosine = inner product.
+        """
+        self.loader = loader
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        # ResNet18 laden, letzten FC-Layer entfernen (letztes Modul wegnehmen)
-        self.model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
-        self.model = nn.Sequential(*list(self.model.children())[:-1])  # ohne fc
-        self.model.to(self.device)
-        self.model.eval()
+        self.normalize = normalize
 
-        # Transformation passend für ResNet
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], 
-                std=[0.229, 0.224, 0.225]
-            )
-        ])
+        # ResNet18 (ImageNet weights), remove the final FC layer → 512-D vector.
+        backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+        self.model = nn.Sequential(*list(backbone.children())[:-1])  # (B,512,1,1)
+        self.model.to(self.device).eval()
 
-    def compute_feature(self, image, db=None):
-        if isinstance(image, str):
-            print("Image is a string")
-            image = Image.open(image).convert('RGB')
-        elif isinstance(image, np.ndarray):
-            print("Image is a numpy array")
-            image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        img_t = self.transform(image).unsqueeze(0).to(self.device)
-        with torch.no_grad():
-            embedding = self.model(img_t)  # shape: (1, 512, 1, 1)
-        embedding = embedding.squeeze().cpu().numpy()
-        return embedding
-    
-    # --------------------------------------------------
-    # Function: calculate_similarity
-    # Description:
-    # This function calculates the similarity between two histograms using cosine similarity.
-    # Cosine similarity measures the cosine of the angle between two non-zero vectors.
-    # It returns a value between -1 (completely different) and 1 (identical).
-    # --------------------------------------------------
-    def calculate_similarity(self, embedding1, embedding2):
-        similarity = 1 - cosine(embedding1.flatten(), embedding2.flatten())
-        return similarity
-    
-    # --------------------------------------------------
-    # Function: find_similar
-    # Description:
-    # This function calculates the overall color similarity and IDs for every Image.
-    # it appendds the id and the similarity to a list and sorts it.
-    # The top-k most similar images are returned.
-    # --------------------------------------------------
-    def find_similar(self, embedding, best_k=5):
-        similarities = []
-
-        # get all images with embeddings from the database
-        self.loader.db.cursor.execute(
-            "SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;"
+        self.transform = transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ),
+            ]
         )
-        rows = self.loader.db.cursor.fetchall()
 
-        for idx, (image_id, hist_blob) in enumerate(rows):
-            db_hist = pickle.loads(hist_blob)  # unpickle the histogram
+        # Optional FAISS IVFPQ index (set via load_ivfpq_index/build_ivfpq_index).
+        self.faiss_index = None  # type: ignore[assignment]
+        self.nprobe = 16  # query breadth; tune for recall/speed trade-off
 
-            # Calculate cosine similarity for each color channel
-            compl_similarity = self.calculate_similarity(embedding, db_hist)
+    # --------------------------- Feature extraction ---------------------------
 
-            # append every image id and the similarity to a list, so we can compsare them later
-            similarities.append((image_id, compl_similarity))
+    def _ensure_pil(self, image: Any) -> Image.Image:
+        """Convert supported inputs (path/np.ndarray/PIL) to a PIL.Image."""
+        if isinstance(image, Image.Image):
+            return image
+        if isinstance(image, str):
+            return Image.open(image)
+        if isinstance(image, np.ndarray):
+            return Image.fromarray(image)
+        raise TypeError("Supported input types: PIL.Image, str (path), numpy.ndarray")
 
-            # counting the pictures
+    def compute_feature(self, image: Any) -> np.ndarray:
+        """
+        Compute a 512-D float32 embedding (L2-normalized if enabled).
+        """
+        img = self._ensure_pil(image).convert("RGB")
+        x = self.transform(img).unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            feat = self.model(x)  # (1,512,1,1)
+        vec = feat.squeeze().float().cpu().numpy().astype(np.float32, copy=False)
+
+        if self.normalize:
+            n = float(np.linalg.norm(vec))
+            if n > 0.0:
+                vec /= n
+        return vec
+
+    # ----------------------------- IVFPQ build/load ---------------------------
+
+    def build_ivfpq_index(self, index_path: str, nlist: int = 4096, m: int = 16) -> None:
+        """
+        Build a FAISS IVFPQ index from all embeddings in the DB and persist it.
+
+        Parameters
+        ----------
+        index_path : str
+            File path to save the FAISS index.
+        nlist : int
+            Number of coarse clusters (IVF lists); ~sqrt(N) is a common heuristic.
+        m : int
+            Number of PQ sub-vectors (must divide the embedding dimension).
+        """
+        import faiss  # lazy import
+
+        cur = self.loader.db.cursor
+        cur.execute("SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;")
+        rows = cur.fetchall()
+
+        ids, vecs = [], []
+        for image_id, blob in rows:
+            v = pickle.loads(blob).astype(np.float32, copy=False)
+            if self.normalize:
+                n = float(np.linalg.norm(v))
+                if n > 0.0:
+                    v = v / n
+            ids.append(image_id)
+            vecs.append(v)
+
+        x = np.vstack(vecs).astype(np.float32, copy=False)
+        ids = np.asarray(ids, dtype=np.int64)
+        d = x.shape[1]
+
+        quantizer = faiss.IndexFlatIP(d)  # IP == cosine for normalized vectors
+        index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)  # 8 bits/code (default)
+        index.train(x)
+        index.add_with_ids(x, ids)
+        index.nprobe = self.nprobe
+        faiss.write_index(index, index_path)
+        self.faiss_index = index
+
+    def load_ivfpq_index(self, index_path: str) -> None:
+        """Load a persisted FAISS IVFPQ index from disk."""
+        import faiss  # lazy import
+
+        index = faiss.read_index(index_path)
+        index.nprobe = self.nprobe
+        self.faiss_index = index
+
+    # --------------------------------- Search --------------------------------
+
+    def find_similar(self, query_vec: np.ndarray, best_k: int = 5) -> list[int]:
+        """
+        Return top-k image IDs similar to the given embedding.
+
+        If a FAISS index is loaded, use it. Otherwise, perform a DB scan
+        with cosine similarity.
+        """
+        # Ensure L2-normalization before searching (safety).
+        if self.normalize:
+            n = float(np.linalg.norm(query_vec))
+            if n > 0.0:
+                query_vec = (query_vec / n).astype(np.float32, copy=False)
+
+        # Fast path: FAISS IVFPQ available.
+        if self.faiss_index is not None:
+            q = query_vec.reshape(1, -1).astype(np.float32, copy=False)
+            scores, ids = self.faiss_index.search(q, best_k)
+            return [int(i) for i in ids[0] if int(i) != -1]
+
+        # Fallback: DB scan with cosine similarity.
+        similarities: list[tuple[int, float]] = []
+
+        cur = self.loader.db.cursor
+        cur.execute("SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;")
+        rows = cur.fetchall()
+
+        for idx, (image_id, emb_blob) in enumerate(rows):
+            v = pickle.loads(emb_blob).astype(np.float32, copy=False)
+            if self.normalize:
+                m = float(np.linalg.norm(v))
+                if m > 0.0:
+                    v = v / m
+            sim = 1.0 - float(cosine(query_vec, v))
+            similarities.append((image_id, sim))
+
             if idx % 100 == 0:
-                print(f"Compared: {idx} piktures")
+                print(f"Compared: {idx} images")
 
-        # Sort descending by similarity
-        similarities.sort(key=lambda x: x[1], reverse=True)
+        similarities.sort(key=lambda t: t[1], reverse=True)
         return [img_id for img_id, _ in similarities[:best_k]]
-    
-
-"""# Dateipfade
-filename1 = "/Users/jule/Downloads/Eiffelturm-Paris2-scaled.jpg"
-filename2 = "/Users/jule/Downloads/eiffelturm-unteransicht.jpg"
-
-recommender = EmbeddingSimilarity()
-image1 = cv2.imread(filename1)
-image2 = cv2.imread(filename2)
-
-# Feature-Vektoren berechnen
-image1_feature = recommender.compute_feature(image1)
-image2_feature = recommender.compute_feature(image2)
-
-# Kosinus-Ähnlichkeit
-similarity = np.dot(image1_feature, image2_feature) / (np.linalg.norm(image1_feature) * np.linalg.norm(image2_feature))
-print("The similarity between image 1 and 2 is:", similarity)"""
