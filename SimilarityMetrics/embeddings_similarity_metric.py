@@ -9,7 +9,10 @@ DB expectation:
 - Table `images` has a column `embedding` that stores a pickled numpy array
   (float32, shape (512,)).
 """
-
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # macOS-Workaround gegen libomp-Doppelladung
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 
 import pickle
 from typing import Any, Optional
@@ -31,39 +34,14 @@ class EmbeddingSimilarity:
         device: Optional[str] = None,
         normalize: bool = True,
     ) -> None:
-        """
-        Parameters
-        ----------
-        loader : Any
-            ImageLoader instance providing `loader.db` for DB access.
-        device : str, optional
-            "cuda" or "cpu". If None, choose automatically.
-        normalize : bool
-            L2-normalize embeddings to make cosine = inner product.
-        """
         self.loader = loader
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or ("cuda" if False else "cpu")  # auf macOS meist 'cpu'
         self.normalize = normalize
-
-        # ResNet18 (ImageNet weights), remove the final FC layer → 512-D vector.
-        backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
-        self.model = nn.Sequential(*list(backbone.children())[:-1])  # (B,512,1,1)
-        self.model.to(self.device).eval()
-
-        self.transform = transforms.Compose(
-            [
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225],
-                ),
-            ]
-        )
-
-        # Optional FAISS IVFPQ index (set via load_ivfpq_index/build_ivfpq_index).
-        self.faiss_index = None  # type: ignore[assignment]
-        self.nprobe = 16  # query breadth; tune for recall/speed trade-off
+        self.model = None
+        self.transform = None
+        self.faiss_index = None
+        self.nprobe = 16
+      
 
     # --------------------------- Feature extraction ---------------------------
 
@@ -76,11 +54,37 @@ class EmbeddingSimilarity:
         if isinstance(image, np.ndarray):
             return Image.fromarray(image)
         raise TypeError("Supported input types: PIL.Image, str (path), numpy.ndarray")
+    
+    def _ensure_model(self):
+        if self.model is None:
+            import torch
+            import torch.nn as nn
+            from torchvision import models, transforms
+
+            # optional: Threads begrenzen – verhindert OpenMP-Stress
+            try:
+                torch.set_num_threads(1)
+            except Exception:
+                pass
+
+            backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+            self.model = nn.Sequential(*list(backbone.children())[:-1])  # (B,512,1,1)
+            self.model.to(self.device).eval()
+
+            self.transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                )
+            ])
 
     def compute_feature(self, image: Any) -> np.ndarray:
         """
         Compute a 512-D float32 embedding (L2-normalized if enabled).
         """
+        self._ensure_model()
         img = self._ensure_pil(image).convert("RGB")
         x = self.transform(img).unsqueeze(0).to(self.device)
 
@@ -163,6 +167,9 @@ class EmbeddingSimilarity:
         # Fast path: FAISS IVFPQ available.
         if self.faiss_index is not None:
             q = query_vec.reshape(1, -1).astype(np.float32, copy=False)
+            print("[DEBUG] query shape:", q.shape, "dtype:", q.dtype)
+            print("[DEBUG] index dim:", self.faiss_index.d)
+            print("[DEBUG] index ntotal:", self.faiss_index.ntotal)
             scores, ids = self.faiss_index.search(q, best_k)
             return [int(i) for i in ids[0] if int(i) != -1]
 
