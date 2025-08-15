@@ -167,9 +167,6 @@ class EmbeddingSimilarity:
         # Fast path: FAISS IVFPQ available.
         if self.faiss_index is not None:
             q = query_vec.reshape(1, -1).astype(np.float32, copy=False)
-            print("[DEBUG] query shape:", q.shape, "dtype:", q.dtype)
-            print("[DEBUG] index dim:", self.faiss_index.d)
-            print("[DEBUG] index ntotal:", self.faiss_index.ntotal)
             scores, ids = self.faiss_index.search(q, best_k)
             return [int(i) for i in ids[0] if int(i) != -1]
 

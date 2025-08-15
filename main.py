@@ -10,12 +10,60 @@ from SimilarityMetrics.embeddings_similarity_metric import EmbeddingSimilarity
 from SimilarityMetrics.hashing_similarity_metric import HashingSimilarity
 from PIL import Image
 
+import matplotlib.pyplot as plt
+
+def plot_topk_basic(results, best_k, loader, comparing_image_path):
+    metrics = list(results.keys())
+    n_rows = len(metrics)
+    n_cols = best_k + 1  # +1 für das Vergleichsbild
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3*n_cols, 3*n_rows))
+
+    # Falls nur eine Zeile/Spalte, immer 2D-Liste erzeugen
+    if n_rows == 1 and n_cols == 1:
+        axes = [[axes]]
+    elif n_rows == 1:
+        axes = [axes]
+    elif n_cols == 1:
+        axes = [[ax] for ax in axes]
+
+    # Vergleichsbild laden
+    ref_img = Image.open(comparing_image_path)
+
+    for r, metric_name in enumerate(metrics):
+        # 1. Spalte: Vergleichsbild
+        ax_ref = axes[r][0]
+        ax_ref.axis('off')
+        ax_ref.imshow(ref_img)
+        ax_ref.set_title(f"{metric_name}\nReferenz", fontsize=9)
+
+        # Rest: Top-k Bilder
+        image_ids = results[metric_name]
+        for c in range(best_k):
+            ax = axes[r][c+1]  # +1 wegen Referenzspalte
+            ax.axis('off')
+
+            if c < len(image_ids):
+                img_id = image_ids[c]
+                img = loader.load_image(img_id)
+                if img is not None:
+                    ax.imshow(img)
+                ax.set_title(f"#{c+1} ID: {img_id}", fontsize=9)
+            else:
+                ax.set_title(f"#{c+1} (leer)", fontsize=9)
+
+    plt.tight_layout()
+    plt.show()
+
+
+
+
 
 def main():
     # ------------------------ CONFIG ------------------------
     db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images.db"
     base_dir = "/Volumes/BigData03/data"
-    comparing_image_path = "/Users/jule/Downloads/jule03_bearb.jpg"
+    comparing_image_path = "/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg"
     best_k = 5
 
     # ------------------------ DB + Loader ------------------------
@@ -51,15 +99,10 @@ def main():
     results = recommender.recommend(input_image, best_k=best_k)
 
     # ------------------------ Output ------------------------
-    for metric_name, image_ids in results.items():
-        print(f"\nTop {best_k} matches for {metric_name}:")
-        for idx, img_id in enumerate(image_ids, start=1):
-            print(f"{idx}. Image ID: {img_id}")
-            img = loader.load_image(img_id)
-            if img:
-                img.show(title=f"{metric_name} Match #{idx}")
+    plot_topk_basic(results, best_k, loader, comparing_image_path)
 
     db.close()
+
 
 
 if __name__ == "__main__":

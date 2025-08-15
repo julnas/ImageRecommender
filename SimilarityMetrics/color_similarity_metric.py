@@ -161,9 +161,6 @@ class ColorSimilarity:
         """
         if self.faiss_index is not None:
             q = self._feature_to_vec(query_feature).reshape(1, -1)
-            print("[DEBUG] query shape:", q.shape, "dtype:", q.dtype)
-            print("[DEBUG] index dim:", self.faiss_index.d)
-            print("[DEBUG] index ntotal:", self.faiss_index.ntotal)
             scores, ids = self.faiss_index.search(q, best_k)
             return [int(i) for i in ids[0] if i != -1]
 

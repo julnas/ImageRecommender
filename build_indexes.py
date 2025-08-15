@@ -36,7 +36,7 @@ def build_ivfpq_index():
 
     N = len(vecs)
     nlist = max(64, min(int(N ** 0.5), N // 4))  # dynamic cluster count
-    m = 8  # PQ segments, nur für tests 8
+    m = 16  # PQ segments
 
     quantizer = faiss.IndexFlatIP(d)
     index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)
@@ -89,14 +89,11 @@ def build_hnsw_color_index():
     # Build FAISS HNSW index + wrap with ID map so we can use image_ids
     d = X.shape[1]
     hnsw = faiss.IndexHNSWFlat(d, 32)     # HNSW with M=32
-    hnsw.hnsw.efConstruction = 200
+    hnsw.hnsw.efConstruction = 4096
 
     # Wrap to support add_with_ids
     index = faiss.IndexIDMap2(hnsw)
     index.add_with_ids(X, ids)
-
-    faiss.write_index(index, OUT_PATH)
-    print(f"[FAISS-HNSW] Saved index with {len(ids)} vectors to {OUT_PATH}")
 
     # Save index
     faiss.write_index(index, OUT_PATH)
