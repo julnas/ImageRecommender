@@ -186,8 +186,5 @@ class EmbeddingSimilarity:
             sim = 1.0 - float(cosine(query_vec, v))
             similarities.append((image_id, sim))
 
-            if idx % 100 == 0:
-                print(f"Compared: {idx} images")
-
         similarities.sort(key=lambda t: t[1], reverse=True)
         return [img_id for img_id, _ in similarities[:best_k]]
