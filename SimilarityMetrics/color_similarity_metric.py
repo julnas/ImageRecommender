@@ -71,9 +71,7 @@ class ColorSimilarity:
             h /= s if s > 0 else 1.0
         return hist_h, hist_s, hist_l
 
-    def compute_feature(
-        self, image: Any
-    ) -> Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]]:
+    def compute_feature(self, image: Any) -> Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]]:
         """Berechnet das Farbfeature (RGB- und HSL-Histogramme) für ein Bild."""
         img = self._ensure_pil(image).convert("RGB")
         img_np = np.asarray(img, dtype=np.uint8)
@@ -82,21 +80,13 @@ class ColorSimilarity:
         hsl_hist = self.calculate_hsl_histogram(image_bgr)
         return rgb_hist, hsl_hist
 
-    def _feature_to_vec(
-        self, feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]]
-    ) -> np.ndarray:
+    def _feature_to_vec(self, feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]]) -> np.ndarray:
         """Wandelt (rgb_hist, hsl_hist) in einen normalisierten 1D-Feature-Vektor um."""
         (r, g, b), (h, s, l) = feature
-        vec = np.hstack(
-            [
-                r.flatten(),
-                g.flatten(),
-                b.flatten(),
-                h.flatten(),
-                s.flatten(),
-                l.flatten(),
-            ]
-        ).astype(np.float32)
+        vec = np.hstack([
+            r.flatten(), g.flatten(), b.flatten(),
+            h.flatten(), s.flatten(), l.flatten()
+        ]).astype(np.float32)
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec /= norm
@@ -107,44 +97,7 @@ class ColorSimilarity:
         """Berechnet die Kosinus-Ähnlichkeit zwischen zwei Histogrammen."""
         return 1.0 - float(cosine(a.ravel(), b.ravel()))
 
-    # --------------------------- FAISS-HNSW: Build & Load ---------------------------
-
-    def build_faiss_hnsw_index(
-        self, index_path: str, m: int = 32, ef_construction: int = 200
-    ) -> None:
-        """
-        Baut einen FAISS-HNSW-Index aus allen Farb-Histogrammen in der DB und speichert ihn.
-
-        m : int
-            HNSW-Graph-Konnektivität (höher = bessere Recall, mehr Speicherverbrauch)
-        ef_construction : int
-            Suchbreite beim Indexbau (höher = bessere Recall, langsamerer Bau)
-        """
-        cur = self.loader.db.cursor
-        cur.execute(
-            "SELECT image_id, color_histogram FROM images WHERE color_histogram IS NOT NULL;"
-        )
-        rows = cur.fetchall()
-        ids, vecs = [], []
-        for image_id, blob in rows:
-            rgb_hsl = pickle.loads(blob)
-            vecs.append(self._feature_to_vec(rgb_hsl))
-            ids.append(int(image_id))
-
-        x = np.vstack(vecs).astype(np.float32)
-        ids = np.array(ids, dtype=np.int64)
-
-        base_index = faiss.IndexHNSWFlat(self._dim, m)
-        base_index.hnsw.efConstruction = ef_construction
-
-        # IDMap2: erlaubt uns IDs explizit zu setzen
-        index = faiss.IndexIDMap2(base_index)
-        index.add_with_ids(x, ids)
-
-        faiss.write_index(index, index_path)
-        print(
-            f"[FAISS-HNSW] Index mit {len(ids)} Vektoren gespeichert nach {index_path}"
-        )
+    # --------------------------- FAISS-HNSW:Load --------------------------
 
     def load_faiss_hnsw_index(self, index_path: str, ef: int = 100) -> None:
         """Lädt einen gespeicherten FAISS-HNSW-Index und setzt efSearch."""
@@ -152,20 +105,14 @@ class ColorSimilarity:
         # efSearch für schnelles Suchen setzen
         if hasattr(idx, "hnsw"):
             idx.hnsw.efSearch = ef
-        elif hasattr(idx, "index") and hasattr(
-            idx.index, "hnsw"
-        ):  # IDMap2 → innerer Index
+        elif hasattr(idx, "index") and hasattr(idx.index, "hnsw"):  # IDMap2 → innerer Index
             idx.index.hnsw.efSearch = ef
         self.faiss_index = idx
         print(f"[FAISS-HNSW] Index geladen von {index_path} (efSearch={ef})")
 
     # -------------------------------- Suche --------------------------------
 
-    def find_similar(
-        self,
-        query_feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]],
-        best_k: int = 5,
-    ) -> list[int]:
+    def find_similar(self, query_feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]], best_k: int = 5) -> list[int]:
         """
         Findet die ähnlichsten Bilder basierend auf dem geladenen FAISS-HNSW-Index.
         Falls kein Index geladen ist, erfolgt ein Fallback zu einer DB-Suche.
@@ -185,12 +132,8 @@ class ColorSimilarity:
         q_rgb, q_hsl = query_feature
         for image_id, blob in rows:
             rgb_hsl = pickle.loads(blob)
-            rgb_sim = (
-                sum(self._cosine_sim(qc, ic) for qc, ic in zip(q_rgb, rgb_hsl[0])) / 3
-            )
-            hsl_sim = (
-                sum(self._cosine_sim(qc, ic) for qc, ic in zip(q_hsl, rgb_hsl[1])) / 3
-            )
+            rgb_sim = sum(self._cosine_sim(qc, ic) for qc, ic in zip(q_rgb, rgb_hsl[0])) / 3
+            hsl_sim = sum(self._cosine_sim(qc, ic) for qc, ic in zip(q_hsl, rgb_hsl[1])) / 3
             sims.append((image_id, (rgb_sim + hsl_sim) / 2))
 
         sims.sort(key=lambda x: x[1], reverse=True)

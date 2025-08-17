@@ -81,8 +81,5 @@ class HashingSimilarity:
             sim = self._similarity(query_hash, db_hash)
             similarities.append((image_id, sim))
 
-            if idx % 100 == 0:
-                print(f"Compared: {idx} images")
-
         similarities.sort(key=lambda t: t[1], reverse=True)
         return [img_id for img_id, _ in similarities[:best_k]]

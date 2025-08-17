@@ -32,14 +32,9 @@ from torchvision import models, transforms
 class EmbeddingSimilarity:
     """Deep embedding similarity powered by a ResNet18 backbone."""
 
-    def __init__(
-        self,
-        loader: Any,
-        device: Optional[str] = None,
-        normalize: bool = True,
-    ) -> None:
+    def __init__(self, loader: Any, device: Optional[str] = None, normalize: bool = True,) -> None:
         self.loader = loader
-        self.device = device or ("cuda" if False else "cpu")  # auf macOS meist 'cpu'
+        self.device = device or ("cuda" if False else "cpu")
         self.normalize = normalize
         self.model = None
         self.transform = None
@@ -59,12 +54,13 @@ class EmbeddingSimilarity:
         raise TypeError("Supported input types: PIL.Image, str (path), numpy.ndarray")
 
     def _ensure_model(self):
+        """Lazy load the ResNet18 model and set it to evaluation mode."""
         if self.model is None:
             import torch
             import torch.nn as nn
             from torchvision import models, transforms
 
-            # optional: Threads begrenzen – verhindert OpenMP-Stress
+            # optional: Threads begrenzen
             try:
                 torch.set_num_threads(1)
             except Exception:
@@ -196,9 +192,6 @@ class EmbeddingSimilarity:
                     v = v / m
             sim = 1.0 - float(cosine(query_vec, v))
             similarities.append((image_id, sim))
-
-            if idx % 100 == 0:
-                print(f"Compared: {idx} images")
 
         similarities.sort(key=lambda t: t[1], reverse=True)
         return [img_id for img_id, _ in similarities[:best_k]]
