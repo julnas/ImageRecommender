@@ -1,5 +1,6 @@
 import pickle
 
+
 def load_and_check_pickle(pickle_path):
     with open(pickle_path, "rb") as f:
         data = pickle.load(f)
@@ -18,6 +19,7 @@ def load_and_check_pickle(pickle_path):
 
         if i >= 2:  # nur die ersten 3 anzeigen
             break
+
 
 if __name__ == "__main__":
     load_and_check_pickle("image_metrics.pkl")

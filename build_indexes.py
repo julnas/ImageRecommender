@@ -14,12 +14,14 @@ def build_ivfpq_index():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     # embeddings holen, sortiert nach image_id (deterministisch!)
-    cur.execute("""
+    cur.execute(
+        """
         SELECT image_id, embedding
         FROM images
         WHERE embedding IS NOT NULL
         ORDER BY image_id ASC
-    """)
+    """
+    )
     rows = cur.fetchall()
     conn.close()
 
@@ -40,7 +42,7 @@ def build_ivfpq_index():
     d = x.shape[1]
 
     N = len(vecs)
-    nlist = max(64, min(int(N ** 0.5), N // 4))  # Cluster dynamisch
+    nlist = max(64, min(int(N**0.5), N // 4))  # Cluster dynamisch
     m = 16  # PQ-Segmente
 
     quantizer = faiss.IndexFlatIP(d)
@@ -69,12 +71,14 @@ def build_hnsw_color_index():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     # Farbhistogramme holen, sortiert nach image_id
-    cur.execute("""
+    cur.execute(
+        """
         SELECT image_id, color_histogram
         FROM images
         WHERE color_histogram IS NOT NULL
         ORDER BY image_id ASC
-    """)
+    """
+    )
     rows = cur.fetchall()
     conn.close()
 
@@ -82,10 +86,16 @@ def build_hnsw_color_index():
     for image_id, blob in rows:
         # Beispiel: Unpickle ((r,g,b), (h,s,l))
         (r, g, b), (h, s, l) = pickle.loads(blob)
-        vec = np.hstack([
-            r.flatten(), g.flatten(), b.flatten(),
-            h.flatten(), s.flatten(), l.flatten()
-        ]).astype(np.float32)
+        vec = np.hstack(
+            [
+                r.flatten(),
+                g.flatten(),
+                b.flatten(),
+                h.flatten(),
+                s.flatten(),
+                l.flatten(),
+            ]
+        ).astype(np.float32)
 
         norm = np.linalg.norm(vec)
         if norm > 0:

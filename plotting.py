@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 # Optional deps
 try:
     import umap  # type: ignore
+
     HAS_UMAP = True
 except Exception:
     HAS_UMAP = False
@@ -21,6 +22,7 @@ from sklearn.metrics import pairwise_distances
 
 try:
     import faiss  # type: ignore
+
     HAS_FAISS = True
 except Exception:
     HAS_FAISS = False
@@ -34,26 +36,45 @@ def ensure_outdir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def reduce_dense(X: np.ndarray, method: str, seed: int, n_components: int = 2) -> np.ndarray:
+def reduce_dense(
+    X: np.ndarray, method: str, seed: int, n_components: int = 2
+) -> np.ndarray:
     method = (method or "umap").lower()
     if method == "umap" and HAS_UMAP:
-        reducer = umap.UMAP(n_components=n_components, random_state=seed, n_neighbors=15, min_dist=0.1)
+        reducer = umap.UMAP(
+            n_components=n_components, random_state=seed, n_neighbors=15, min_dist=0.1
+        )
         return reducer.fit_transform(X)
     if method == "tsne":
-        return TSNE(n_components=n_components, random_state=seed, init="pca", learning_rate="auto", perplexity=30.0).fit_transform(X)
+        return TSNE(
+            n_components=n_components,
+            random_state=seed,
+            init="pca",
+            learning_rate="auto",
+            perplexity=30.0,
+        ).fit_transform(X)
     if method == "pca":
         return PCA(n_components=n_components, random_state=seed).fit_transform(X)
     # Fallbacks
     if HAS_UMAP:
-        reducer = umap.UMAP(n_components=n_components, random_state=seed, n_neighbors=15, min_dist=0.1)
+        reducer = umap.UMAP(
+            n_components=n_components, random_state=seed, n_neighbors=15, min_dist=0.1
+        )
         return reducer.fit_transform(X)
     try:
-        return TSNE(n_components=n_components, random_state=seed, init="pca", learning_rate="auto").fit_transform(X)
+        return TSNE(
+            n_components=n_components,
+            random_state=seed,
+            init="pca",
+            learning_rate="auto",
+        ).fit_transform(X)
     except Exception:
         return PCA(n_components=n_components).fit_transform(X)
 
 
-def scatter_save(X2: np.ndarray, ids: List[str], title: str, out_png: str, out_csv: str) -> None:
+def scatter_save(
+    X2: np.ndarray, ids: List[str], title: str, out_png: str, out_csv: str
+) -> None:
     plt.figure(figsize=(8, 6))
     plt.scatter(X2[:, 0], X2[:, 1], s=6, alpha=0.8)
     plt.title(title)
@@ -114,7 +135,15 @@ def hash_to_bits_any(obj) -> Optional[np.ndarray]:
         return None
 
 
-def plot_dense(ids: List[str], X: np.ndarray, title: str, method: str, out_png: str, out_csv: str, seed: int) -> bool:
+def plot_dense(
+    ids: List[str],
+    X: np.ndarray,
+    title: str,
+    method: str,
+    out_png: str,
+    out_csv: str,
+    seed: int,
+) -> bool:
     if len(ids) < 3 or X is None or X.size == 0:
         return False
     X = np.asarray(X, dtype=np.float32)
@@ -125,7 +154,9 @@ def plot_dense(ids: List[str], X: np.ndarray, title: str, method: str, out_png: 
     return True
 
 
-def plot_hash(ids: List[str], values: Iterable, out_png: str, out_csv: str, seed: int) -> bool:
+def plot_hash(
+    ids: List[str], values: Iterable, out_png: str, out_csv: str, seed: int
+) -> bool:
     bits_all = []
     for v in values:
         b = hash_to_bits_any(v)
@@ -140,9 +171,15 @@ def plot_hash(ids: List[str], values: Iterable, out_png: str, out_csv: str, seed
         B[i, :L] = b[:L]
     D = pairwise_distances(B, metric="hamming")
     try:
-        X2 = TSNE(n_components=2, metric="precomputed", random_state=seed, init="random", learning_rate="auto").fit_transform(D)
+        X2 = TSNE(
+            n_components=2,
+            metric="precomputed",
+            random_state=seed,
+            init="random",
+            learning_rate="auto",
+        ).fit_transform(D)
     except Exception:
-        D2 = D ** 2
+        D2 = D**2
         n = D2.shape[0]
         H = np.eye(n) - np.ones((n, n)) / n
         K = -0.5 * H @ D2 @ H
@@ -151,7 +188,9 @@ def plot_hash(ids: List[str], values: Iterable, out_png: str, out_csv: str, seed
     return True
 
 
-def sqlite_fetch(db_path: str, cols: List[str], limit: Optional[int], query: Optional[str]) -> List[Tuple]:
+def sqlite_fetch(
+    db_path: str, cols: List[str], limit: Optional[int], query: Optional[str]
+) -> List[Tuple]:
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.cursor()
@@ -213,11 +252,23 @@ def load_faiss_vectors(index_path: str, ids_path: Optional[str]):
 
 def main():
     log(">> plotting.py starting up")
-    ap = argparse.ArgumentParser(description="Plot 2D layouts from SQLite, Pickle/NPZ/NPY, or FAISS sources.")
-    ap.add_argument("--outdir", type=str, default="plots", help="Output directory for PNGs/CSVs.")
-    ap.add_argument("--method", type=str, default="umap", choices=["umap", "tsne", "pca"], help="Reducer for dense features.")
+    ap = argparse.ArgumentParser(
+        description="Plot 2D layouts from SQLite, Pickle/NPZ/NPY, or FAISS sources."
+    )
+    ap.add_argument(
+        "--outdir", type=str, default="plots", help="Output directory for PNGs/CSVs."
+    )
+    ap.add_argument(
+        "--method",
+        type=str,
+        default="umap",
+        choices=["umap", "tsne", "pca"],
+        help="Reducer for dense features.",
+    )
     ap.add_argument("--random-state", type=int, default=42)
-    ap.add_argument("--limit", type=int, default=None, help="Optional subsample for SQLite.")
+    ap.add_argument(
+        "--limit", type=int, default=None, help="Optional subsample for SQLite."
+    )
     # SQLite
     ap.add_argument("--db", type=str, help="SQLite DB path.")
     ap.add_argument("--color-query", type=str, default=None)
@@ -248,10 +299,13 @@ def main():
         ids, vecs_or_obj = load_pickle_like(args.color_pkl)
         if isinstance(vecs_or_obj, np.ndarray) and vecs_or_obj.dtype != object:
             color_done = plot_dense(
-                ids, vecs_or_obj, f"Color similarity ({args.method.upper()})",
-                args.method, os.path.join(args.outdir, "color_layout.png"),
+                ids,
+                vecs_or_obj,
+                f"Color similarity ({args.method.upper()})",
+                args.method,
+                os.path.join(args.outdir, "color_layout.png"),
                 os.path.join(args.outdir, "color_layout.csv"),
-                args.random_state
+                args.random_state,
             )
         log("[OK] Color (pickle)" if color_done else "[SKIP] Color (pickle)")
 
@@ -261,10 +315,13 @@ def main():
         try:
             ids_c, vecs_c = load_faiss_vectors(args.faiss_color, args.faiss_color_ids)
             color_done = plot_dense(
-                ids_c, vecs_c, f"Color similarity ({args.method.upper()})",
-                args.method, os.path.join(args.outdir, "color_layout.png"),
+                ids_c,
+                vecs_c,
+                f"Color similarity ({args.method.upper()})",
+                args.method,
+                os.path.join(args.outdir, "color_layout.png"),
                 os.path.join(args.outdir, "color_layout.csv"),
-                args.random_state
+                args.random_state,
             )
         except Exception as e:
             log(f"[Color/FAISS] skipped: {e}")
@@ -274,7 +331,9 @@ def main():
     if not color_done and args.db:
         log("Color: trying DB source...")
         try:
-            rows = sqlite_fetch(args.db, ["image_id", "color_histogram"], args.limit, args.color_query)
+            rows = sqlite_fetch(
+                args.db, ["image_id", "color_histogram"], args.limit, args.color_query
+            )
             ids, vecs = [], []
             for img_id, blob in rows:
                 if blob is None:
@@ -286,7 +345,9 @@ def main():
                 try:
                     rgb, hsl = val
                     arrs = list(rgb) + list(hsl)
-                    flat = np.concatenate([np.asarray(a).ravel() for a in arrs]).astype(np.float32)
+                    flat = np.concatenate([np.asarray(a).ravel() for a in arrs]).astype(
+                        np.float32
+                    )
                     s = flat.sum()
                     if s > 0:
                         flat = flat / s
@@ -303,10 +364,13 @@ def main():
             if vecs:
                 X = np.vstack(vecs)
                 color_done = plot_dense(
-                    ids, X, f"Color similarity ({args.method.upper()})",
-                    args.method, os.path.join(args.outdir, "color_layout.png"),
+                    ids,
+                    X,
+                    f"Color similarity ({args.method.upper()})",
+                    args.method,
+                    os.path.join(args.outdir, "color_layout.png"),
                     os.path.join(args.outdir, "color_layout.csv"),
-                    args.random_state
+                    args.random_state,
                 )
         except Exception as e:
             log(f"[Color/DB] skipped: {e}")
@@ -318,12 +382,17 @@ def main():
         ids, vecs = load_pickle_like(args.embedding_pkl)
         if isinstance(vecs, np.ndarray) and vecs.dtype != object:
             embedding_done = plot_dense(
-                ids, vecs, f"Embedding similarity ({args.method.upper()})",
-                args.method, os.path.join(args.outdir, "embedding_layout.png"),
+                ids,
+                vecs,
+                f"Embedding similarity ({args.method.upper()})",
+                args.method,
+                os.path.join(args.outdir, "embedding_layout.png"),
                 os.path.join(args.outdir, "embedding_layout.csv"),
-                args.random_state
+                args.random_state,
             )
-        log("[OK] Embedding (pickle)" if embedding_done else "[SKIP] Embedding (pickle)")
+        log(
+            "[OK] Embedding (pickle)" if embedding_done else "[SKIP] Embedding (pickle)"
+        )
 
     # Embedding: FAISS
     if not embedding_done and args.faiss_embedding:
@@ -331,10 +400,13 @@ def main():
         try:
             ids_e, vecs_e = load_faiss_vectors(args.faiss_embedding, args.faiss_ids)
             embedding_done = plot_dense(
-                ids_e, vecs_e, f"Embedding similarity ({args.method.upper()})",
-                args.method, os.path.join(args.outdir, "embedding_layout.png"),
+                ids_e,
+                vecs_e,
+                f"Embedding similarity ({args.method.upper()})",
+                args.method,
+                os.path.join(args.outdir, "embedding_layout.png"),
                 os.path.join(args.outdir, "embedding_layout.csv"),
-                args.random_state
+                args.random_state,
             )
         except Exception as e:
             log(f"[Embedding/FAISS] skipped: {e}")
@@ -344,7 +416,9 @@ def main():
     if not embedding_done and args.db:
         log("Embedding: trying DB source...")
         try:
-            rows = sqlite_fetch(args.db, ["image_id", "embedding"], args.limit, args.embedding_query)
+            rows = sqlite_fetch(
+                args.db, ["image_id", "embedding"], args.limit, args.embedding_query
+            )
             ids, vecs = [], []
             for img_id, blob in rows:
                 if blob is None:
@@ -359,10 +433,13 @@ def main():
             if vecs:
                 X = np.vstack(vecs)
                 embedding_done = plot_dense(
-                    ids, X, f"Embedding similarity ({args.method.upper()})",
-                    args.method, os.path.join(args.outdir, "embedding_layout.png"),
+                    ids,
+                    X,
+                    f"Embedding similarity ({args.method.upper()})",
+                    args.method,
+                    os.path.join(args.outdir, "embedding_layout.png"),
                     os.path.join(args.outdir, "embedding_layout.csv"),
-                    args.random_state
+                    args.random_state,
                 )
         except Exception as e:
             log(f"[Embedding/DB] skipped: {e}")
@@ -373,9 +450,11 @@ def main():
         log("Hashing: trying pickle source...")
         ids, values = load_pickle_like(args.hashing_pkl)
         hashing_done = plot_hash(
-            ids, values, os.path.join(args.outdir, "hashing_layout.png"),
+            ids,
+            values,
+            os.path.join(args.outdir, "hashing_layout.png"),
             os.path.join(args.outdir, "hashing_layout.csv"),
-            args.random_state
+            args.random_state,
         )
         log("[OK] Hashing (pickle)" if hashing_done else "[SKIP] Hashing (pickle)")
 
@@ -383,7 +462,9 @@ def main():
     if not hashing_done and args.db:
         log("Hashing: trying DB source...")
         try:
-            rows = sqlite_fetch(args.db, ["image_id", "image_hash"], args.limit, args.hashing_query)
+            rows = sqlite_fetch(
+                args.db, ["image_id", "image_hash"], args.limit, args.hashing_query
+            )
             ids, vals = [], []
             for img_id, blob in rows:
                 if blob is None:
@@ -396,9 +477,11 @@ def main():
                 vals.append(val)
             if ids:
                 hashing_done = plot_hash(
-                    ids, vals, os.path.join(args.outdir, "hashing_layout.png"),
+                    ids,
+                    vals,
+                    os.path.join(args.outdir, "hashing_layout.png"),
                     os.path.join(args.outdir, "hashing_layout.csv"),
-                    args.random_state
+                    args.random_state,
                 )
         except Exception as e:
             log(f"[Hashing/DB] skipped: {e}")

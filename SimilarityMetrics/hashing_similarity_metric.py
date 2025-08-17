@@ -59,17 +59,21 @@ class HashingSimilarity:
 
     def _similarity(self, h1: imagehash.ImageHash, h2: imagehash.ImageHash) -> float:
         """Normalized Hamming similarity ∈ [0, 1]."""
-        dist = (h1 - h2)  # Hamming distance (0..bits)
+        dist = h1 - h2  # Hamming distance (0..bits)
         return 1.0 - (dist / float(self._bits))
 
-    def find_similar(self, query_hash: imagehash.ImageHash, best_k: int = 5) -> list[int]:
+    def find_similar(
+        self, query_hash: imagehash.ImageHash, best_k: int = 5
+    ) -> list[int]:
         """
         Return top-k image IDs most similar by normalized Hamming similarity.
         """
         similarities: list[tuple[int, float]] = []
 
         cur = self.loader.db.cursor
-        cur.execute("SELECT image_id, image_hash FROM images WHERE image_hash IS NOT NULL;")
+        cur.execute(
+            "SELECT image_id, image_hash FROM images WHERE image_hash IS NOT NULL;"
+        )
         rows = cur.fetchall()
 
         for idx, (image_id, hash_blob) in enumerate(rows):
