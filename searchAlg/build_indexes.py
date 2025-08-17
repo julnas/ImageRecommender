@@ -14,18 +14,18 @@ os.makedirs(INDEX_DIR, exist_ok=True)
 
 # ---- IVFPQ (Embeddings) Defaults für ~250k Bilder ----
 IVFPQ_DEFAULTS = {
-    "nlist": 4096,           # deutlich höher als sqrt(N); gute Balance für 250k
-    "target_code_bytes": 32, # grob 16–32 B üblich; 32 B = sehr ordentlich
-    "nprobe": 96,            # 64–128: Recall/Latency-Tuning
-    "use_opq": True,         # OPQ deutlich besserer Recall bei gleichem Code
-    "train_samples": 200_000 # Trainingssample (statt auf allen Vektoren)
+    "nlist": 4096,  # deutlich höher als sqrt(N); gute Balance für 250k
+    "target_code_bytes": 32,  # grob 16–32 B üblich; 32 B = sehr ordentlich
+    "nprobe": 96,  # 64–128: Recall/Latency-Tuning
+    "use_opq": True,  # OPQ deutlich besserer Recall bei gleichem Code
+    "train_samples": 200_000,  # Trainingssample (statt auf allen Vektoren)
 }
 
 # ---- HNSW (Color-Histogramme) Defaults ----
 HNSW_DEFAULTS = {
-    "M": 32,                 # 16–32 üblich; 32 = höherer Recall
-    "efConstruction": 300,   # 200–400 realistisch, statt 4096
-    "efSearch": 256          # Query-Zeit-Recall; hier als Default gesetzt
+    "M": 32,  # 16–32 üblich; 32 = höherer Recall
+    "efConstruction": 300,  # 200–400 realistisch, statt 4096
+    "efSearch": 256,  # Query-Zeit-Recall; hier als Default gesetzt
 }
 
 RNG_SEED = 12345  # Reproduzierbarkeit für Training
@@ -69,12 +69,14 @@ def _fetch_embeddings() -> Tuple[np.ndarray, np.ndarray]:
     """Hole (ids, embeddings) aus DB, normalisiert für Cosine/IP."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT image_id, embedding
         FROM images
         WHERE embedding IS NOT NULL
         ORDER BY image_id ASC
-    """)
+    """
+    )
     rows = cur.fetchall()
     conn.close()
 
@@ -98,12 +100,14 @@ def _fetch_color_histograms() -> Tuple[np.ndarray, np.ndarray]:
     """Hole (ids, color_vectors) aus DB, normalisiert (L2)."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT image_id, color_histogram
         FROM images
         WHERE color_histogram IS NOT NULL
         ORDER BY image_id ASC
-    """)
+    """
+    )
     rows = cur.fetchall()
     conn.close()
 
@@ -112,8 +116,16 @@ def _fetch_color_histograms() -> Tuple[np.ndarray, np.ndarray]:
     for image_id, blob in rows:
         # Erwartete Struktur: ((r,g,b), (h,s,l)) mit z.B. numpy arrays
         (r, g, b), (h, s, l) = pickle.loads(blob)
-        vec = np.hstack([r.flatten(), g.flatten(), b.flatten(),
-                         h.flatten(), s.flatten(), l.flatten()]).astype(np.float32)
+        vec = np.hstack(
+            [
+                r.flatten(),
+                g.flatten(),
+                b.flatten(),
+                h.flatten(),
+                s.flatten(),
+                l.flatten(),
+            ]
+        ).astype(np.float32)
         # Normieren
         nrm = np.linalg.norm(vec)
         if nrm > 0:
@@ -132,11 +144,13 @@ def _fetch_color_histograms() -> Tuple[np.ndarray, np.ndarray]:
 # -----------------------------
 # IVFPQ Index bauen (mit optional OPQ)
 # -----------------------------
-def build_ivfpq_index(nlist: int = IVFPQ_DEFAULTS["nlist"],
-                      target_code_bytes: int = IVFPQ_DEFAULTS["target_code_bytes"],
-                      nprobe: int = IVFPQ_DEFAULTS["nprobe"],
-                      use_opq: bool = IVFPQ_DEFAULTS["use_opq"],
-                      train_samples: int = IVFPQ_DEFAULTS["train_samples"]) -> None:
+def build_ivfpq_index(
+    nlist: int = IVFPQ_DEFAULTS["nlist"],
+    target_code_bytes: int = IVFPQ_DEFAULTS["target_code_bytes"],
+    nprobe: int = IVFPQ_DEFAULTS["nprobe"],
+    use_opq: bool = IVFPQ_DEFAULTS["use_opq"],
+    train_samples: int = IVFPQ_DEFAULTS["train_samples"],
+) -> None:
     """
     Baue IVFPQ-Index für Embeddings mit optional OPQ.
     :param nlist: Anzahl der Vorverteilungslisten (Cluster)
@@ -168,7 +182,9 @@ def build_ivfpq_index(nlist: int = IVFPQ_DEFAULTS["nlist"],
     train_idx = rng.choice(N, train_count, replace=False)
     train_X = X[train_idx]
 
-    print(f"[IVFPQ] N={N}, d={d}, nlist={nlist}, m={m}, nprobe={nprobe}, OPQ={use_opq}, train={len(train_X)}")
+    print(
+        f"[IVFPQ] N={N}, d={d}, nlist={nlist}, m={m}, nprobe={nprobe}, OPQ={use_opq}, train={len(train_X)}"
+    )
     index.train(train_X)
 
     # Add mit IDs — bei PreTransform müssen wir an den Wrapper adden
@@ -196,9 +212,11 @@ def build_ivfpq_index(nlist: int = IVFPQ_DEFAULTS["nlist"],
 # -----------------------------
 # HNSW Index bauen (Color)
 # -----------------------------
-def build_hnsw_color_index(M: int = HNSW_DEFAULTS["M"],
-                           efConstruction: int = HNSW_DEFAULTS["efConstruction"],
-                           efSearch: int = HNSW_DEFAULTS["efSearch"]) -> None:
+def build_hnsw_color_index(
+    M: int = HNSW_DEFAULTS["M"],
+    efConstruction: int = HNSW_DEFAULTS["efConstruction"],
+    efSearch: int = HNSW_DEFAULTS["efSearch"],
+) -> None:
     """
     Baue HNSW-Index für Color-Histogramme.
     :param M: Anzahl der Nachbarn pro Knoten (Verbindungsgrad)
@@ -220,7 +238,9 @@ def build_hnsw_color_index(M: int = HNSW_DEFAULTS["M"],
 
     out_path = os.path.join(INDEX_DIR, "color_hnsw.faiss")
     faiss.write_index(index, out_path)
-    print(f"[HNSW] Saved index with {len(ids)} vectors to {out_path} (M={M}, efC={efConstruction}, efS={efSearch})")
+    print(
+        f"[HNSW] Saved index with {len(ids)} vectors to {out_path} (M={M}, efC={efConstruction}, efS={efSearch})"
+    )
 
     ids_path = os.path.join(INDEX_DIR, "color_hnsw.ids.pkl")
     with open(ids_path, "wb") as f:

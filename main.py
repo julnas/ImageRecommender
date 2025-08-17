@@ -1,4 +1,5 @@
 import os
+
 # Fix for MacOS OpenMP duplicate lib issue
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -12,6 +13,7 @@ from PIL import Image, ImageOps
 import numpy as np
 import matplotlib.pyplot as plt
 from time import time
+
 
 def _make_vertical_montage(paths, max_width=320, pad=6, bg=255):
     """
@@ -41,7 +43,7 @@ def _make_vertical_montage(paths, max_width=320, pad=6, bg=255):
         return Image.new("RGB", (max_width, 60), (230, 230, 230))
 
     total_h = sum(im.size[1] for im in imgs) + pad * (len(imgs) + 1)
-    canvas = Image.new("RGB", (max_width + 2*pad, total_h), (bg, bg, bg))
+    canvas = Image.new("RGB", (max_width + 2 * pad, total_h), (bg, bg, bg))
 
     y = pad
     for im in imgs:
@@ -49,6 +51,7 @@ def _make_vertical_montage(paths, max_width=320, pad=6, bg=255):
         y += im.size[1] + pad
 
     return canvas
+
 
 def plot_topk_basic(results, best_k, loader, comparing_image_path):
     """
@@ -59,7 +62,7 @@ def plot_topk_basic(results, best_k, loader, comparing_image_path):
     n_rows = len(metrics)
     n_cols = best_k + 1  # 1 Referenzspalte + k Treffer
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3*n_cols, 3*n_rows))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows))
 
     # Immer 2D-Array sicherstellen
     if n_rows == 1 and n_cols == 1:
@@ -83,18 +86,20 @@ def plot_topk_basic(results, best_k, loader, comparing_image_path):
         # 1. Spalte: die Montage
         ax_ref = axes[r, 0]
         ax_ref.imshow(ref_panel_np)
-        ax_ref.axis('off')
+        ax_ref.axis("off")
         ax_ref.set_title(f"{metric_name}\nReferenz(en)", fontsize=9)
 
         # Restliche Spalten: Top-k Ergebnisse
         image_ids = results[metric_name]
         for c in range(best_k):
-            ax = axes[r, c+1]
-            ax.axis('off')
+            ax = axes[r, c + 1]
+            ax.axis("off")
 
             if c < len(image_ids):
                 img_id = image_ids[c]
-                img = loader.load_image(img_id)  # sollte ein PIL-Image oder np.array liefern
+                img = loader.load_image(
+                    img_id
+                )  # sollte ein PIL-Image oder np.array liefern
                 if img is not None:
                     if isinstance(img, Image.Image):
                         img = ImageOps.exif_transpose(img).convert("RGB")
@@ -113,10 +118,16 @@ def main():
 
     time_start = time()
     # ------------------------ CONFIG ------------------------
-    db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images_database.db" # Pfad zur SQLite-Datenbank
-    base_dir = "/Volumes/BigData03/data" # Basisverzeichnis für Bilder
-    comparing_image_path = [ "/Users/jule/Downloads/samy03.JPG", '/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg', '/Users/jule/Downloads/uvex-Schutzbrillen-Gefahren-von-blauem-UV-Licht.jpg'] # Pfad oder Liste von Pfaden zu Vergleichsbildern
-    best_k = 5 # Anzahl der besten Ergebnisse, die zurückgegeben werden sollen
+    db_path = (
+        "/Users/jule/Documents/Uni/images_database.db"  # Pfad zur SQLite-Datenbank
+    )
+    base_dir = "/Volumes/BigData03/data"  # Basisverzeichnis für Bilder
+    comparing_image_path = [
+        "/Users/jule/Downloads/samy03.JPG",
+        "/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg",
+        "/Users/jule/Downloads/uvex-Schutzbrillen-Gefahren-von-blauem-UV-Licht.jpg",
+    ]  # Pfad oder Liste von Pfaden zu Vergleichsbildern
+    best_k = 5  # Anzahl der besten Ergebnisse, die zurückgegeben werden sollen
 
     # ------------------------ DB + Loader ------------------------
     db = Database(db_path)
@@ -126,11 +137,9 @@ def main():
     emb = EmbeddingSimilarity(loader)
     emb.load_ivfpq_index("indexes/emb_ivfpq.faiss")
 
-
     # ------------------------ Color (FAISS-HNSW) ------------------------
     color = ColorSimilarity(loader, bins=16)
     color.load_faiss_hnsw_index("indexes/color_hnsw.faiss", ef=100)
-
 
     # ------------------------ Hash ------------------------
     hashing = HashingSimilarity(loader)
@@ -153,7 +162,6 @@ def main():
     plot_topk_basic(results, best_k, loader, comparing_image_path)
 
     db.close()
-
 
 
 if __name__ == "__main__":

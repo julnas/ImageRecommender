@@ -16,7 +16,12 @@ from SimilarityMetrics.hashing_similarity_metric import HashingSimilarity
 
 
 # ----------------- Robuster Generator für Bildpfade -----------------
-ALLOWED_EXTS = {".jpg", ".jpeg", ".png"}  # bei Bedarf erweitern: ".tif", ".tiff", ".heic"
+ALLOWED_EXTS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+}  # bei Bedarf erweitern: ".tif", ".tiff", ".heic"
+
 
 def iter_image_paths(
     base_dir: str,
@@ -55,7 +60,11 @@ def iter_image_paths(
         for d in dirs:
             child_abs = os.path.normpath(os.path.join(root_abs, d))
             child_rel = os.path.normpath(os.path.relpath(child_abs, base_dir_abs))
-            if child_abs in abs_exclude_paths or child_rel in rel_exclude_paths or d in exclude_names:
+            if (
+                child_abs in abs_exclude_paths
+                or child_rel in rel_exclude_paths
+                or d in exclude_names
+            ):
                 continue
             kept.append(d)
         dirs[:] = kept
@@ -67,12 +76,11 @@ def iter_image_paths(
                 yield os.path.join(root_abs, fname)
 
 
-
 def scan_and_fill_database(
     base_dir: str,
     db_path: str = "images_database.db",
     max_images: Optional[int] = None,
-    commit_batch_size: int = 1000
+    commit_batch_size: int = 1000,
 ):
     """
     Scans `base_dir` recursively for images and stores features in SQLite.
@@ -116,9 +124,9 @@ def scan_and_fill_database(
 
     # --- Rekursiv durch alle Bilder ---
     for full_path in iter_image_paths(
-    base_dir=base_dir, 
-    follow_links=False, # Links nicht folgen, um z.B. Symlinks zu vermeiden
-    exclude=[], # Möglichkeit zum Ausschließen von Ordnern
+        base_dir=base_dir,
+        follow_links=False,  # Links nicht folgen, um z.B. Symlinks zu vermeiden
+        exclude=[],  # Möglichkeit zum Ausschließen von Ordnern
     ):
         if max_images and count >= max_images:
             print(f"[INFO] Stopped after {max_images} images.")
@@ -195,7 +203,9 @@ def scan_and_fill_database(
 
         if batch_count >= commit_batch_size:
             db.connection.commit()
-            print(f"[OK] Committed batch of {batch_count} (total processed: {count}, skipped: {skipped})")
+            print(
+                f"[OK] Committed batch of {batch_count} (total processed: {count}, skipped: {skipped})"
+            )
             batch_count = 0
 
         if count % 200 == 0:
@@ -205,7 +215,9 @@ def scan_and_fill_database(
     # Letzten Batch committen
     if batch_count > 0:
         db.connection.commit()
-        print(f"[OK] Final commit of {batch_count} (total processed: {count}, skipped: {skipped})")
+        print(
+            f"[OK] Final commit of {batch_count} (total processed: {count}, skipped: {skipped})"
+        )
 
     db.close()
 

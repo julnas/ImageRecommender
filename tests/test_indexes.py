@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
+
 faiss = pytest.importorskip("faiss")
+
 
 def test_ivfpq_small():
     X = np.random.rand(100, 32).astype("float32")
@@ -11,6 +13,7 @@ def test_ivfpq_small():
     index.nprobe = 4
     D, I = index.search(Q, 3)
     assert I.shape == (5, 3)
+
 
 def test_hnsw_small():
     X = np.random.rand(100, 32).astype("float32")

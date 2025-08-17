@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 from SimilarityMetrics.color_similarity_metric import ColorSimilarity
 
+
 def test_color_compute_feature_and_vec():
     img = Image.new("RGB", (16, 16), (255, 0, 0))
     metric = ColorSimilarity(loader=None, bins=8)
@@ -9,6 +10,7 @@ def test_color_compute_feature_and_vec():
     v = metric._feature_to_vec(feat)
     assert v.ndim == 1
     assert np.isfinite(v).all()
+
 
 def test_color_similarity_self_vs_other():
     img1 = Image.new("RGB", (16, 16), (255, 0, 0))

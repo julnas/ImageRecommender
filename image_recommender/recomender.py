@@ -2,6 +2,7 @@ from typing import Dict, List, Union
 import numpy as np
 from imagehash import ImageHash
 
+
 class Recommender:
     def __init__(self, db, loader, metrics: Dict[str, object]):
         self.db = db
@@ -26,16 +27,23 @@ class Recommender:
             raise ValueError("Erwarte für jedes Feature das Format ((r,g,b),(h,s,l)).")
 
         # Alle zu float + 1D
-        def as1d(x): return np.asarray(x, dtype=float).ravel()
+        def as1d(x):
+            return np.asarray(x, dtype=float).ravel()
 
-        rgb_lists = list(zip(*[tuple(map(as1d, f[0])) for f in feature_list]))  # -> [ [r_i], [g_i], [b_i] ]
-        hsl_lists = list(zip(*[tuple(map(as1d, f[1])) for f in feature_list]))  # -> [ [h_i], [s_i], [l_i] ]
+        rgb_lists = list(
+            zip(*[tuple(map(as1d, f[0])) for f in feature_list])
+        )  # -> [ [r_i], [g_i], [b_i] ]
+        hsl_lists = list(
+            zip(*[tuple(map(as1d, f[1])) for f in feature_list])
+        )  # -> [ [h_i], [s_i], [l_i] ]
 
         # Konsistenz: gleiche Länge pro Kanal
-        for ch_list, name in zip(rgb_lists + hsl_lists, ["R","G","B","H","S","L"]):
+        for ch_list, name in zip(rgb_lists + hsl_lists, ["R", "G", "B", "H", "S", "L"]):
             lens = {arr.size for arr in ch_list}
             if len(lens) != 1:
-                raise ValueError(f"Kanal {name} hat unterschiedliche Längen: {sorted(lens)}")
+                raise ValueError(
+                    f"Kanal {name} hat unterschiedliche Längen: {sorted(lens)}"
+                )
 
         n = len(feature_list)
         if weights is None:
@@ -49,16 +57,23 @@ class Recommender:
             for w, a in zip(weights, arrs):
                 c += w * a
             s = c.sum()
-            if s > 0: c /= s  # L1 pro Kanal
+            if s > 0:
+                c /= s  # L1 pro Kanal
             return c
 
-        r = mix_channel(rgb_lists[0]); g = mix_channel(rgb_lists[1]); b = mix_channel(rgb_lists[2])
-        h = mix_channel(hsl_lists[0]); s = mix_channel(hsl_lists[1]); l = mix_channel(hsl_lists[2])
+        r = mix_channel(rgb_lists[0])
+        g = mix_channel(rgb_lists[1])
+        b = mix_channel(rgb_lists[2])
+        h = mix_channel(hsl_lists[0])
+        s = mix_channel(hsl_lists[1])
+        l = mix_channel(hsl_lists[2])
 
         return (r, g, b), (h, s, l)
 
     @staticmethod
-    def combine_embeddings(embed_list: List[np.ndarray], weights: List[float] = None) -> np.ndarray:
+    def combine_embeddings(
+        embed_list: List[np.ndarray], weights: List[float] = None
+    ) -> np.ndarray:
         if not embed_list:
             raise ValueError("combine_embeddings: embed_list ist leer.")
         embed_list = [np.asarray(e, dtype=float) for e in embed_list]
@@ -74,11 +89,13 @@ class Recommender:
         combined = np.zeros_like(normed[0], dtype=float)
         for e, w in zip(normed, weights):
             combined += w * e
-        combined /= (np.linalg.norm(combined) + 1e-12)
+        combined /= np.linalg.norm(combined) + 1e-12
         return combined
 
     @staticmethod
-    def combine_hashes_majority(hash_list: List[Union[np.ndarray, List[int], List[bool]]]) -> np.ndarray:
+    def combine_hashes_majority(
+        hash_list: List[Union[np.ndarray, List[int], List[bool]]],
+    ) -> np.ndarray:
         """
         Kombiniert mehrere Hashes per bitweiser Mehrheitsabstimmung.
         Akzeptiert: ImageHash-Objekte, Arrays/Listen (0/1/bool), Hex-Strings/Bytes.
@@ -89,6 +106,7 @@ class Recommender:
 
         def to_bits(x):
             import numpy as np
+
             # 1) imagehash.ImageHash
             if hasattr(x, "hash"):
                 # x.hash ist ein bool-Array (H x W)
@@ -111,7 +129,9 @@ class Recommender:
                 n_bits = len(hexstr) * 4
                 intval = int(hexstr, 16) if hexstr else 0
                 bstr = bin(intval)[2:].zfill(n_bits)  # Binärstring mit führenden Nullen
-                arr = np.fromiter((1 if ch == "1" else 0 for ch in bstr), dtype=int, count=n_bits)
+                arr = np.fromiter(
+                    (1 if ch == "1" else 0 for ch in bstr), dtype=int, count=n_bits
+                )
                 return arr
             raise TypeError(f"Nicht unterstützter Hash-Typ: {type(x).__name__}")
 
@@ -127,8 +147,8 @@ class Recommender:
                 arr = np.concatenate([pad, arr], axis=0)  # links auffüllen
             padded.append(arr)
 
-        arr2d = np.vstack(padded)               # shape: (n_hashes, n_bits)
-        votes = arr2d.sum(axis=0)               # Stimmen für 1 je Bit
+        arr2d = np.vstack(padded)  # shape: (n_hashes, n_bits)
+        votes = arr2d.sum(axis=0)  # Stimmen für 1 je Bit
         majority = (votes >= (arr2d.shape[0] / 2)).astype(int)
         return ImageHash(majority)
 
@@ -156,7 +176,9 @@ class Recommender:
                 elif metric_name in ("hash", "hashing", "phash", "dhash", "ahash"):
                     query_vector = Recommender.combine_hashes_majority(feature_list)
                 else:
-                    raise ValueError(f"Unbekannte Metrik für Listenfusion: {metric_name}")
+                    raise ValueError(
+                        f"Unbekannte Metrik für Listenfusion: {metric_name}"
+                    )
             else:
                 # Einzelbild
                 query_vector = metric.compute_feature(input_image)
