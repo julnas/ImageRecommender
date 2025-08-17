@@ -97,45 +97,7 @@ class ColorSimilarity:
         """Berechnet die Kosinus-Ähnlichkeit zwischen zwei Histogrammen."""
         return 1.0 - float(cosine(a.ravel(), b.ravel()))
 
-    # --------------------------- FAISS-HNSW: Build & Load ---------------------------
-
-    def build_faiss_hnsw_index(
-        self,
-        index_path: str,
-        m: int = 32,
-        ef_construction: int = 200
-    ) -> None:
-        """
-        Baut einen FAISS-HNSW-Index aus allen Farb-Histogrammen in der DB und speichert ihn.
-
-        m : int
-            HNSW-Graph-Konnektivität (höher = bessere Recall, mehr Speicherverbrauch)
-        ef_construction : int
-            Suchbreite beim Indexbau (höher = bessere Recall, langsamerer Bau)
-        """
-        cur = self.loader.db.cursor
-        cur.execute(
-            "SELECT image_id, color_histogram FROM images WHERE color_histogram IS NOT NULL;"
-        )
-        rows = cur.fetchall()
-        ids, vecs = [], []
-        for image_id, blob in rows:
-            rgb_hsl = pickle.loads(blob)
-            vecs.append(self._feature_to_vec(rgb_hsl))
-            ids.append(int(image_id))
-
-        x = np.vstack(vecs).astype(np.float32)
-        ids = np.array(ids, dtype=np.int64)
-
-        base_index = faiss.IndexHNSWFlat(self._dim, m)
-        base_index.hnsw.efConstruction = ef_construction
-
-        # IDMap2: erlaubt uns IDs explizit zu setzen
-        index = faiss.IndexIDMap2(base_index)
-        index.add_with_ids(x, ids)
-
-        faiss.write_index(index, index_path)
-        print(f"[FAISS-HNSW] Index mit {len(ids)} Vektoren gespeichert nach {index_path}")
+    # --------------------------- FAISS-HNSW:Load --------------------------
 
     def load_faiss_hnsw_index(self, index_path: str, ef: int = 100) -> None:
         """Lädt einen gespeicherten FAISS-HNSW-Index und setzt efSearch."""
@@ -150,11 +112,7 @@ class ColorSimilarity:
 
     # -------------------------------- Suche --------------------------------
 
-    def find_similar(
-        self,
-        query_feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]],
-        best_k: int = 5
-    ) -> list[int]:
+    def find_similar(self, query_feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]], best_k: int = 5) -> list[int]:
         """
         Findet die ähnlichsten Bilder basierend auf dem geladenen FAISS-HNSW-Index.
         Falls kein Index geladen ist, erfolgt ein Fallback zu einer DB-Suche.

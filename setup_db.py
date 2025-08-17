@@ -114,14 +114,11 @@ def scan_and_fill_database(
     batch_count = 0
     skipped = 0
 
-    # --- Rekursiv durch alle Bilder (Iterator WIRD benutzt) ---
+    # --- Rekursiv durch alle Bilder ---
     for full_path in iter_image_paths(
-    base_dir=base_dir,
-    follow_links=False,
-    exclude=[
-        "/Volumes/BigData03/data/image_data/FFHQ_images/23000",  # absolut
-        "/Volumes/BigData03/data/image_data/weather_image_recognition/dew"                                      
-    ],
+    base_dir=base_dir, 
+    follow_links=False, # Links nicht folgen, um z.B. Symlinks zu vermeiden
+    exclude=[], # Möglichkeit zum Ausschließen von Ordnern
     ):
         if max_images and count >= max_images:
             print(f"[INFO] Stopped after {max_images} images.")
@@ -216,7 +213,6 @@ def scan_and_fill_database(
 
 
 if __name__ == "__main__":
-    # Tipp: Setz base_dir direkt auf den Ordner, der die Bild-Unterordner enthält,
-    # z. B. "/Volumes/BigData03/data/image_data" statt nur "/Volumes/BigData03/data"
+    # Beispielaufruf: Scan und Füllen der Datenbank
     base_dir = "/Volumes/BigData03/data"
     scan_and_fill_database(base_dir, max_images=None, commit_batch_size=5000)

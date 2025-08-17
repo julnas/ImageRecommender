@@ -109,12 +109,14 @@ def plot_topk_basic(results, best_k, loader, comparing_image_path):
 
 
 def main():
+    """Hauptfunktion zum Ausführen der Bildempfehlung."""
+
     time_start = time()
     # ------------------------ CONFIG ------------------------
-    db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images_database.db"
-    base_dir = "/Volumes/BigData03/data"
-    comparing_image_path = [ "/Users/jule/Downloads/samy03.JPG", '/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg', '/Users/jule/Downloads/uvex-Schutzbrillen-Gefahren-von-blauem-UV-Licht.jpg']
-    best_k = 5
+    db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images_database.db" # Pfad zur SQLite-Datenbank
+    base_dir = "/Volumes/BigData03/data" # Basisverzeichnis für Bilder
+    comparing_image_path = [ "/Users/jule/Downloads/samy03.JPG", '/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg', '/Users/jule/Downloads/uvex-Schutzbrillen-Gefahren-von-blauem-UV-Licht.jpg'] # Pfad oder Liste von Pfaden zu Vergleichsbildern
+    best_k = 5 # Anzahl der besten Ergebnisse, die zurückgegeben werden sollen
 
     # ------------------------ DB + Loader ------------------------
     db = Database(db_path)
@@ -134,7 +136,7 @@ def main():
     hashing = HashingSimilarity(loader)
 
     # ------------------------ Choose metrics ------------------------
-    # 👉 Zum Testen einzelne Metriken aktivieren/deaktivieren
+    # Einzelne Metriken aktivieren/deaktivieren
     metrics = {"color": color, "embedding": emb, "hashing": hashing}
 
     # ------------------------ Recommendation ------------------------
