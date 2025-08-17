@@ -1,10 +1,11 @@
 import numpy as np
 import faiss
 
+
 class IVFPQIndex:
     def __init__(self, d, nlist=4096, m=16):
         """
-        Initialize the IVFPQ index. 
+        Initialize the IVFPQ index.
         :param d: The dimensionality of the data points.
         :param nlist: The number of clusters (nlist) for the IVF index.
         :param m: The number of subquantizers for the PQ index.
@@ -15,7 +16,7 @@ class IVFPQIndex:
     def build(self, X, ids):
         """
         Build the IVFPQ index with the provided data.
-        
+
         :param X: The data points to index, shape (n_samples, d).
         :param ids: The unique identifiers for each data point.
         """
@@ -25,7 +26,7 @@ class IVFPQIndex:
     def save(self, path):
         """
         Save the index to a file.
-        
+
         :param path: The file path where the index will be saved.
         """
         faiss.write_index(self.index, path)
@@ -33,14 +34,14 @@ class IVFPQIndex:
     def load(self, path):
         """
         Load the index from a file.
-        
+
         :param path: The file path from which the index will be loaded.
         """
         self.index = faiss.read_index(path)
 
     def search(self, q, k=5):
         """
-        Search for the k nearest neighbors of the query vector. 
+        Search for the k nearest neighbors of the query vector.
         :param q: The query vector to search for.
         :param k: The number of nearest neighbors to return.
         :return: A tuple of (ids, distances) for the k nearest neighbors.

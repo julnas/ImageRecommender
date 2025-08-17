@@ -9,8 +9,12 @@ DB expectation:
 - Table `images` has a column `embedding` that stores a pickled numpy array
   (float32, shape (512,)).
 """
+
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"   # macOS-Workaround gegen libomp-Doppelladung
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = (
+    "TRUE"  # macOS-Workaround gegen libomp-Doppelladung
+)
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
@@ -36,7 +40,6 @@ class EmbeddingSimilarity:
         self.transform = None
         self.faiss_index = None
         self.nprobe = 16
-      
 
     # --------------------------- Feature extraction ---------------------------
 
@@ -49,7 +52,7 @@ class EmbeddingSimilarity:
         if isinstance(image, np.ndarray):
             return Image.fromarray(image)
         raise TypeError("Supported input types: PIL.Image, str (path), numpy.ndarray")
-    
+
     def _ensure_model(self):
         """Lazy load the ResNet18 model and set it to evaluation mode."""
         if self.model is None:
@@ -67,14 +70,16 @@ class EmbeddingSimilarity:
             self.model = nn.Sequential(*list(backbone.children())[:-1])  # (B,512,1,1)
             self.model.to(self.device).eval()
 
-            self.transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225],
-                )
-            ])
+            self.transform = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225],
+                    ),
+                ]
+            )
 
     def compute_feature(self, image: Any) -> np.ndarray:
         """
@@ -96,7 +101,9 @@ class EmbeddingSimilarity:
 
     # ----------------------------- IVFPQ build/load ---------------------------
 
-    def build_ivfpq_index(self, index_path: str, nlist: int = 4096, m: int = 16) -> None:
+    def build_ivfpq_index(
+        self, index_path: str, nlist: int = 4096, m: int = 16
+    ) -> None:
         """
         Build a FAISS IVFPQ index from all embeddings in the DB and persist it.
 
@@ -112,7 +119,9 @@ class EmbeddingSimilarity:
         import faiss  # lazy import
 
         cur = self.loader.db.cursor
-        cur.execute("SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;")
+        cur.execute(
+            "SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;"
+        )
         rows = cur.fetchall()
 
         ids, vecs = [], []
@@ -170,7 +179,9 @@ class EmbeddingSimilarity:
         similarities: list[tuple[int, float]] = []
 
         cur = self.loader.db.cursor
-        cur.execute("SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;")
+        cur.execute(
+            "SELECT image_id, embedding FROM images WHERE embedding IS NOT NULL;"
+        )
         rows = cur.fetchall()
 
         for idx, (image_id, emb_blob) in enumerate(rows):
