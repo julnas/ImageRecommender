@@ -83,12 +83,6 @@ def main():
     # ------------------------ Hash ------------------------
     hashing = HashingSimilarity(loader)
 
-    # ------------------------ Debug dimension check ------------------------
-    if hasattr(emb, "faiss_index"):
-        print("[DEBUG] IVFPQ dim:", emb.faiss_index.d)
-    if hasattr(color, "faiss_index"):
-        print("[DEBUG] HNSW dim:", color.faiss_index.d)
-
     # ------------------------ Choose metrics ------------------------
     # 👉 Zum Testen einzelne Metriken aktivieren/deaktivieren
     metrics = {"color": color, "embedding": emb, "hashing": hashing}
