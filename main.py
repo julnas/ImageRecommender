@@ -61,9 +61,9 @@ def plot_topk_basic(results, best_k, loader, comparing_image_path):
 
 def main():
     # ------------------------ CONFIG ------------------------
-    db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images.db"
+    db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images_database.db"
     base_dir = "/Volumes/BigData03/data"
-    comparing_image_path = "/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg"
+    comparing_image_path = "/Users/jule/Downloads/PHOTO-2025-05-24-17-06-36.jpg"
     best_k = 5
 
     # ------------------------ DB + Loader ------------------------

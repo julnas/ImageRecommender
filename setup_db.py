@@ -18,20 +18,54 @@ from SimilarityMetrics.hashing_similarity_metric import HashingSimilarity
 # ----------------- Robuster Generator für Bildpfade -----------------
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png"}  # bei Bedarf erweitern: ".tif", ".tiff", ".heic"
 
-def iter_image_paths(base_dir: str, follow_links: bool = False):
+def iter_image_paths(
+    base_dir: str,
+    follow_links: bool = False,
+    exclude: Optional[list[str]] = None,
+):
     """
-    Generator: liefert absolute Pfade zu allen Bilddateien in base_dir (rekursiv).
-    - Ignoriert macOS-Resourceforks ("._")
-    - Endungen case-insensitive
-    - Optional: Symlinks folgen
+    Liefert absolute Pfade zu Bilddateien unter base_dir (rekursiv).
+
+    exclude: Liste von Einträgen, die ausgelassen werden sollen.
+      - absoluter Ordnerpfad: "/Volumes/.../FFHQ_images/23000"
+      - relativer Pfad ab base_dir: "image_data/FFHQ_images/23000"
+      - nur Ordnername: "thumbnails" (wird überall ignoriert)
     """
-    for root, dirs, files in os.walk(base_dir, followlinks=follow_links):
+    exclude = exclude or []
+
+    abs_exclude_paths, rel_exclude_paths, exclude_names = set(), set(), set()
+    base_dir_abs = os.path.normpath(os.path.abspath(base_dir))
+
+    for item in exclude:
+        if os.path.isabs(item):
+            p = os.path.normpath(item)
+            abs_exclude_paths.add(p)
+            exclude_names.add(os.path.basename(p))
+        else:
+            rel = os.path.normpath(item)
+            rel_exclude_paths.add(rel)
+            abs_exclude_paths.add(os.path.normpath(os.path.join(base_dir_abs, rel)))
+            exclude_names.add(os.path.basename(rel))
+
+    for root, dirs, files in os.walk(base_dir_abs, followlinks=follow_links):
+        root_abs = os.path.normpath(root)
+
+        # Unterordner in-place filtern -> nicht betreten
+        kept = []
+        for d in dirs:
+            child_abs = os.path.normpath(os.path.join(root_abs, d))
+            child_rel = os.path.normpath(os.path.relpath(child_abs, base_dir_abs))
+            if child_abs in abs_exclude_paths or child_rel in rel_exclude_paths or d in exclude_names:
+                continue
+            kept.append(d)
+        dirs[:] = kept
+
         for fname in files:
             if fname.startswith("._"):
                 continue
-            ext = os.path.splitext(fname)[1].lower()
-            if ext in ALLOWED_EXTS:
-                yield os.path.join(root, fname)
+            if os.path.splitext(fname)[1].lower() in ALLOWED_EXTS:
+                yield os.path.join(root_abs, fname)
+
 
 
 def scan_and_fill_database(
@@ -81,7 +115,14 @@ def scan_and_fill_database(
     skipped = 0
 
     # --- Rekursiv durch alle Bilder (Iterator WIRD benutzt) ---
-    for full_path in iter_image_paths(base_dir, follow_links=False):
+    for full_path in iter_image_paths(
+    base_dir=base_dir,
+    follow_links=False,
+    exclude=[
+        "/Volumes/BigData03/data/image_data/FFHQ_images/23000",  # absolut
+        "/Volumes/BigData03/data/image_data/weather_image_recognition/dew"                                      
+    ],
+    ):
         if max_images and count >= max_images:
             print(f"[INFO] Stopped after {max_images} images.")
             break
@@ -178,4 +219,4 @@ if __name__ == "__main__":
     # Tipp: Setz base_dir direkt auf den Ordner, der die Bild-Unterordner enthält,
     # z. B. "/Volumes/BigData03/data/image_data" statt nur "/Volumes/BigData03/data"
     base_dir = "/Volumes/BigData03/data"
-    scan_and_fill_database(base_dir, max_images=None, commit_batch_size=1000)
+    scan_and_fill_database(base_dir, max_images=None, commit_batch_size=5000)
