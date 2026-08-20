@@ -156,7 +156,7 @@ def scan_and_fill_database(
         # Serialisieren für DB
         color_blob = pickle.dumps(color_feature)
         embedding_blob = pickle.dumps(embedding_vector)
-        hash_blob = pickle.dumps(hash_value)
+        hash_blob = hashing_similarity.hash_to_blob(hash_value)
 
         width, height = img.size
         file_size = os.path.getsize(full_path) if os.path.exists(full_path) else None

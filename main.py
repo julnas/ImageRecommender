@@ -11,7 +11,7 @@ from SimilarityMetrics.hashing_similarity_metric import HashingSimilarity
 from PIL import Image, ImageOps
 import numpy as np
 import matplotlib.pyplot as plt
-from time import time
+from time import perf_counter
 
 def _make_vertical_montage(paths, max_width=320, pad=6, bg=255):
     """
@@ -111,11 +111,11 @@ def plot_topk_basic(results, best_k, loader, comparing_image_path):
 def main():
     """Hauptfunktion zum Ausführen der Bildempfehlung."""
 
-    time_start = time()
+    time_start = perf_counter()
     # ------------------------ CONFIG ------------------------
-    db_path = "/Users/jule/Documents/Uni/4. Semester/Big Data Engineering/ImageRecommender/images_database.db" # Pfad zur SQLite-Datenbank
+    db_path = "images_database.db"
     base_dir = "/Volumes/BigData03/data" # Basisverzeichnis für Bilder
-    comparing_image_path = [ "/Users/jule/Downloads/samy03.JPG", '/Users/jule/Downloads/Elbe_-_flussaufwärts_kurz_nach_Ort_Königstein.jpg', '/Users/jule/Downloads/uvex-Schutzbrillen-Gefahren-von-blauem-UV-Licht.jpg'] # Pfad oder Liste von Pfaden zu Vergleichsbildern
+    comparing_image_path = [ "/Users/belizsenol/Downloads/Frucht.JPG"] # Pfad oder Liste von Pfaden zu Vergleichsbildern
     best_k = 5 # Anzahl der besten Ergebnisse, die zurückgegeben werden sollen
 
     # ------------------------ DB + Loader ------------------------
@@ -124,16 +124,33 @@ def main():
 
     # ------------------------ Embedding (IVFPQ) ------------------------
     emb = EmbeddingSimilarity(loader)
+    index_load_start = perf_counter()
     emb.load_ivfpq_index("indexes/emb_ivfpq.faiss")
+    print(
+        f"[PROFILE] embedding index load: "
+        f"{perf_counter() - index_load_start:.4f}s"
+    )
 
 
     # ------------------------ Color (FAISS-HNSW) ------------------------
     color = ColorSimilarity(loader, bins=16)
+    index_load_start = perf_counter()
     color.load_faiss_hnsw_index("indexes/color_hnsw.faiss", ef=100)
+    print(
+        f"[PROFILE] color index load: "
+        f"{perf_counter() - index_load_start:.4f}s"
+    )
 
 
     # ------------------------ Hash ------------------------
     hashing = HashingSimilarity(loader)
+    hash_cache_load_start = perf_counter()
+    cached_hash_count = hashing.load_cache()
+    print(
+        f"[PROFILE] hashing cache load: "
+        f"{perf_counter() - hash_cache_load_start:.4f}s "
+        f"({cached_hash_count} hashes)"
+    )
 
     # ------------------------ Choose metrics ------------------------
     # Einzelne Metriken aktivieren/deaktivieren
@@ -148,7 +165,7 @@ def main():
     else:
         input_image = Image.open(comparing_image_path).convert("RGB")
     results = recommender.recommend(input_image, best_k=best_k)
-    print(f"[INFO] Recommendation took {time() - time_start:.2f} seconds")
+    print(f"[INFO] Recommendation took {perf_counter() - time_start:.2f} seconds")
     # ------------------------ Output ------------------------
     plot_topk_basic(results, best_k, loader, comparing_image_path)
 

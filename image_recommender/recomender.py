@@ -1,4 +1,6 @@
 from typing import Dict, List, Union
+from time import perf_counter
+
 import numpy as np
 from imagehash import ImageHash
 
@@ -7,6 +9,7 @@ class Recommender:
         self.db = db
         self.loader = loader
         self.metrics = metrics
+        self.last_timings: Dict[str, Dict[str, float]] = {}
 
     # ---- Kombinationsfunktionen -------------------------------------------
     @staticmethod
@@ -140,8 +143,11 @@ class Recommender:
           korrekt kombiniert (Histogramm, Embedding, Hash).
         """
         results: Dict[str, list] = {}
+        self.last_timings = {}
 
         for metric_name, metric in self.metrics.items():
+            metric_start = perf_counter()
+
             # Features berechnen
             if isinstance(input_image, list):
                 if len(input_image) == 0:
@@ -161,7 +167,22 @@ class Recommender:
                 # Einzelbild
                 query_vector = metric.compute_feature(input_image)
 
+            feature_end = perf_counter()
             similar_ids = metric.find_similar(query_vector, best_k=best_k)
+            search_end = perf_counter()
             results[metric_name] = similar_ids
+
+            timing = {
+                "feature_seconds": feature_end - metric_start,
+                "search_seconds": search_end - feature_end,
+                "total_seconds": search_end - metric_start,
+            }
+            self.last_timings[metric_name] = timing
+            print(
+                f"[PROFILE] {metric_name}: "
+                f"feature={timing['feature_seconds']:.4f}s, "
+                f"search={timing['search_seconds']:.4f}s, "
+                f"total={timing['total_seconds']:.4f}s"
+            )
 
         return results

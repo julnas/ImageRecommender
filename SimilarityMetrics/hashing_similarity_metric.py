@@ -48,6 +48,8 @@ class HashingSimilarity:
         self.loader = loader
         self.hash_size = hash_size
         self._bits = hash_size * hash_size
+        self._cached_image_ids: np.ndarray | None = None
+        self._cached_hashes: np.ndarray | None = None
 
         if self._bits > 64:
             raise ValueError(
@@ -118,7 +120,7 @@ class HashingSimilarity:
         for bit in bits:
             value = (value << 1) | int(bit)
 
-        return np.uint64(value).tobytes()
+        return value.to_bytes(8, byteorder="big", signed=False)
 
     @staticmethod
     def blob_to_uint64(
@@ -134,10 +136,9 @@ class HashingSimilarity:
                 f"got {len(hash_blob)} bytes."
             )
 
-        return np.frombuffer(
-            hash_blob,
-            dtype=np.uint64,
-        )[0]
+        return np.uint64(
+            int.from_bytes(hash_blob, byteorder="big", signed=False)
+        )
 
     @staticmethod
     def hash_to_uint64(
@@ -147,14 +148,8 @@ class HashingSimilarity:
         Convert an ImageHash directly into a uint64 value.
         """
 
-        blob = HashingSimilarity.hash_to_blob(
-            hash_value
-        )
-
-        return np.frombuffer(
-            blob,
-            dtype=np.uint64,
-        )[0]
+        blob = HashingSimilarity.hash_to_blob(hash_value)
+        return HashingSimilarity.blob_to_uint64(blob)
 
     # --------------------------- Similarity ---------------------------
 
@@ -172,6 +167,67 @@ class HashingSimilarity:
         )
 
     # --------------------------- Search ---------------------------
+
+    def clear_cache(self) -> None:
+        """Discard cached database hashes after external database changes."""
+
+        self._cached_image_ids = None
+        self._cached_hashes = None
+
+    def load_cache(self) -> int:
+        """Load database hashes now and return the number of cached entries."""
+
+        image_ids, _ = self._load_hash_cache()
+        return int(image_ids.size)
+
+    def _load_hash_cache(self) -> tuple[np.ndarray, np.ndarray]:
+        """Load compact hashes from SQLite once and retain them in memory."""
+
+        if self._cached_image_ids is not None and self._cached_hashes is not None:
+            return self._cached_image_ids, self._cached_hashes
+
+        cur = self.loader.db.cursor
+        cur.execute(
+            """
+            SELECT image_id, image_hash
+            FROM images
+            WHERE image_hash IS NOT NULL
+            ORDER BY image_id ASC
+            """
+        )
+        rows = cur.fetchall()
+
+        image_ids = np.fromiter(
+            (image_id for image_id, _ in rows),
+            dtype=np.int64,
+            count=len(rows),
+        )
+        compact_blobs = []
+
+        for image_id, hash_blob in rows:
+            try:
+                if len(hash_blob) != 8:
+                    raise ValueError
+                compact_blobs.append(bytes(hash_blob))
+            except (TypeError, ValueError) as error:
+                blob_length = len(hash_blob) if hash_blob is not None else 0
+                raise ValueError(
+                    f"Invalid hash BLOB for image_id {image_id}: expected "
+                    f"the optimized 8-byte format, got {blob_length} bytes. "
+                    "Rebuild the database with setup_db.py."
+                ) from error
+
+        if compact_blobs:
+            hashes = np.frombuffer(
+                b"".join(compact_blobs),
+                dtype=">u8",
+            ).astype(np.uint64)
+        else:
+            hashes = np.empty(0, dtype=np.uint64)
+
+        self._cached_image_ids = image_ids
+        self._cached_hashes = hashes
+        return image_ids, hashes
 
     def find_similar(
         self,
@@ -195,45 +251,10 @@ class HashingSimilarity:
             query_hash
         )
 
-        cur = self.loader.db.cursor
+        image_ids, hashes = self._load_hash_cache()
 
-        cur.execute(
-            """
-            SELECT image_id, image_hash
-            FROM images
-            WHERE image_hash IS NOT NULL
-            """
-        )
-
-        rows = cur.fetchall()
-
-        if not rows:
+        if image_ids.size == 0:
             return []
-
-        image_ids = np.empty(
-            len(rows),
-            dtype=np.int64,
-        )
-
-        hashes = np.empty(
-            len(rows),
-            dtype=np.uint64,
-        )
-
-        for index, (image_id, hash_blob) in enumerate(rows):
-            image_ids[index] = image_id
-
-            if len(hash_blob) != 8:
-                raise ValueError(
-                    f"Invalid hash BLOB for image_id "
-                    f"{image_id}: expected 8 bytes, "
-                    f"got {len(hash_blob)} bytes."
-                )
-
-            hashes[index] = np.frombuffer(
-                hash_blob,
-                dtype=np.uint64,
-            )[0]
 
         # XOR identifies all differing bits.
         xor_values = np.bitwise_xor(
@@ -242,13 +263,7 @@ class HashingSimilarity:
         )
 
         # Count set bits to get the Hamming distance.
-        distances = np.array(
-            [
-                int(value).bit_count()
-                for value in xor_values
-            ],
-            dtype=np.int16,
-        )
+        distances = np.bitwise_count(xor_values)
 
         # We only need the best `best_k` results.
         k = min(
@@ -273,51 +288,3 @@ class HashingSimilarity:
             int(image_ids[index])
             for index in best_indices
         ]
-    # --------------------------- Feature extraction ---------------------------
-
-    @staticmethod
-    def _ensure_pil(image: Any) -> Image.Image:
-        """Convert supported inputs (path/np.ndarray/PIL) to a PIL.Image."""
-        if isinstance(image, Image.Image):
-            return image
-        if isinstance(image, str):
-            return Image.open(image)
-        if isinstance(image, np.ndarray):
-            return Image.fromarray(image)
-        raise TypeError("Supported input types: PIL.Image, str (path), numpy.ndarray")
-
-    def compute_feature(self, image: Any) -> imagehash.ImageHash:
-        """
-        Compute a perceptual average hash for the given image.
-        """
-        img = self._ensure_pil(image).convert("RGB")
-        return imagehash.average_hash(img, hash_size=self.hash_size)
-
-    # --------------------------------- Search --------------------------------
-
-    def _similarity(self, h1: imagehash.ImageHash, h2: imagehash.ImageHash) -> float:
-        """Normalized Hamming similarity ∈ [0, 1]."""
-        dist = h1 - h2  # Hamming distance (0..bits)
-        return 1.0 - (dist / float(self._bits))
-
-    def find_similar(
-        self, query_hash: imagehash.ImageHash, best_k: int = 5
-    ) -> list[int]:
-        """
-        Return top-k image IDs most similar by normalized Hamming similarity.
-        """
-        similarities: list[tuple[int, float]] = []
-
-        cur = self.loader.db.cursor
-        cur.execute(
-            "SELECT image_id, image_hash FROM images WHERE image_hash IS NOT NULL;"
-        )
-        rows = cur.fetchall()
-
-        for idx, (image_id, hash_blob) in enumerate(rows):
-            db_hash = pickle.loads(hash_blob)  # stored as pickled ImageHash
-            sim = self._similarity(query_hash, db_hash)
-            similarities.append((image_id, sim))
-
-        similarities.sort(key=lambda t: t[1], reverse=True)
-        return [img_id for img_id, _ in similarities[:best_k]]
