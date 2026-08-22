@@ -214,76 +214,324 @@ def scan_and_fill_database(
     skipped = 0
     batch_count = 0
 
-    # --- Rekursiv durch alle Bilder ---
-    for full_path in iter_image_paths(
-    base_dir=base_dir, 
-    follow_links=False, # Links nicht folgen, um z.B. Symlinks zu vermeiden
-    exclude=[], # Möglichkeit zum Ausschließen von Ordnern
-    ):
-        if max_images and count >= max_images:
-            print(f"[INFO] Stopped after {max_images} images.")
-            break
+    try:
+        # -----------------------------------------------------
+        # Create the temporary database in the same directory.
+        #
+        # This allows the final replacement to be atomic.
+        # -----------------------------------------------------
 
-        relative_path = os.path.relpath(full_path, base_dir)
+        fd, temp_db_path = tempfile.mkstemp(
+            prefix=".images_database_",
+            suffix=".tmp.db",
+            dir=db_directory,
+        )
 
-        # Bild laden (sicher, Filehandle direkt schließen)
-        try:
-            img = loader.load_image_by_path(full_path)
-            if img is None:
-                with Image.open(full_path) as im:
-                    img = im.convert("RGB").copy()
-            else:
-                img = img.convert("RGB").copy()
-        except (UnidentifiedImageError, OSError) as e:
-            print(f"[WARN] Skip (cannot open): {relative_path} -> {e}")
-            skipped += 1
-            continue
-        except Exception as e:
-            print(f"[WARN] Skip (open exception): {relative_path} -> {e}")
-            skipped += 1
-            continue
+        os.close(fd)
 
-        # Features berechnen
-        try:
-            color_feature = color_similarity.compute_feature(img)
-            embedding_vector = embedding_similarity.compute_feature(img)
-            hash_value = hashing_similarity.compute_feature(img)
-        except Exception as e:
-            print(f"[WARN] Skip (feature error): {relative_path} -> {e}")
-            skipped += 1
-            continue
+        print(
+            f"[INFO] Creating temporary database: "
+            f"{temp_db_path}"
+        )
 
-        # Serialisieren für DB
-        color_blob = pickle.dumps(color_feature)
-        embedding_blob = pickle.dumps(embedding_vector)
-        hash_blob = hashing_similarity.hash_to_blob(hash_value)
+        # -----------------------------------------------------
+        # Open temporary database
+        # -----------------------------------------------------
 
-        width, height = img.size
-        file_size = os.path.getsize(full_path) if os.path.exists(full_path) else None
+        temp_db = Database(
+            temp_db_path
+        )
 
-        try:
-            db.cursor.execute(
-                """
-                INSERT INTO images
-                    (file_path, color_histogram, embedding, image_hash, width, height, file_size)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(file_path) DO UPDATE SET
-                    color_histogram = excluded.color_histogram,
-                    embedding = excluded.embedding,
-                    image_hash = excluded.image_hash,
-                    width = excluded.width,
-                    height = excluded.height,
-                    file_size = excluded.file_size;
-                """,
-                (
-                    relative_path,
-                    color_blob,
-                    embedding_blob,
-                    hash_blob,
-                    width,
-                    height,
-                    file_size,
-                ),
+        temp_db.cursor.execute(
+            "PRAGMA journal_mode=WAL;"
+        )
+
+        temp_db.cursor.execute(
+            "PRAGMA synchronous=NORMAL;"
+        )
+
+        temp_db.cursor.execute(
+            "PRAGMA busy_timeout=10000;"
+        )
+
+        create_database_schema(
+            temp_db
+        )
+
+        # -----------------------------------------------------
+        # Initialize image loader and feature extractors
+        # -----------------------------------------------------
+
+        loader = ImageLoader(
+            temp_db,
+            base_dir,
+        )
+
+        color_similarity = ColorSimilarity(
+            loader
+        )
+
+        embedding_similarity = EmbeddingSimilarity(
+            loader
+        )
+
+        hashing_similarity = HashingSimilarity(
+            loader
+        )
+
+        # -----------------------------------------------------
+        # Scan the selected drive
+        # -----------------------------------------------------
+
+        for full_path in iter_image_paths(
+            base_dir=base_dir,
+            follow_links=False,
+            exclude=[],
+        ):
+
+            if (
+                max_images is not None
+                and count >= max_images
+            ):
+                print(
+                    f"[INFO] Stopped after "
+                    f"{max_images} images."
+                )
+                break
+
+            relative_path = os.path.normpath(
+                os.path.relpath(
+                    full_path,
+                    base_dir,
+                )
+            )
+
+            # -------------------------------------------------
+            # Load image
+            # -------------------------------------------------
+
+            try:
+                img = loader.load_image_by_path(
+                    full_path
+                )
+
+                if img is None:
+                    with Image.open(full_path) as im:
+                        img = im.convert(
+                            "RGB"
+                        ).copy()
+
+                else:
+                    img = img.convert(
+                        "RGB"
+                    ).copy()
+
+            except (
+                UnidentifiedImageError,
+                OSError,
+            ) as e:
+
+                print(
+                    f"[WARN] Skip (cannot open): "
+                    f"{relative_path} -> {e}"
+                )
+
+                skipped += 1
+                continue
+
+            except Exception as e:
+
+                print(
+                    f"[WARN] Skip (open exception): "
+                    f"{relative_path} -> {e}"
+                )
+
+                skipped += 1
+                continue
+
+            # -------------------------------------------------
+            # Calculate features
+            # -------------------------------------------------
+
+            try:
+                color_feature = (
+                    color_similarity.compute_feature(
+                        img
+                    )
+                )
+
+                embedding_vector = (
+                    embedding_similarity.compute_feature(
+                        img
+                    )
+                )
+
+                hash_value = (
+                    hashing_similarity.compute_feature(
+                        img
+                    )
+                )
+
+            except Exception as e:
+
+                print(
+                    f"[WARN] Skip (feature error): "
+                    f"{relative_path} -> {e}"
+                )
+
+                skipped += 1
+                continue
+
+            # -------------------------------------------------
+            # Serialize features for database storage
+            #
+            # Color and embedding features still use Pickle.
+            #
+            # The perceptual hash is different:
+            # it is stored directly as an 8-byte BLOB.
+            # -------------------------------------------------
+
+            try:
+                color_blob = pickle.dumps(
+                    color_feature
+                )
+
+                embedding_blob = pickle.dumps(
+                    embedding_vector
+                )
+
+                hash_blob = (
+                    hashing_similarity.hash_to_blob(
+                        hash_value
+                    )
+                )
+
+            except Exception as e:
+
+                print(
+                    f"[WARN] Skip (serialization error): "
+                    f"{relative_path} -> {e}"
+                )
+
+                skipped += 1
+                continue
+
+            # -------------------------------------------------
+            # Read image metadata
+            # -------------------------------------------------
+
+            width, height = img.size
+
+            try:
+                file_size = os.path.getsize(
+                    full_path
+                )
+
+            except OSError:
+                file_size = None
+
+            # -------------------------------------------------
+            # Insert image into temporary database
+            # -------------------------------------------------
+
+            try:
+                temp_db.cursor.execute(
+                    """
+                    INSERT INTO images (
+                        file_path,
+                        color_histogram,
+                        embedding,
+                        image_hash,
+                        width,
+                        height,
+                        file_size
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+
+                    ON CONFLICT(file_path) DO UPDATE SET
+                        color_histogram =
+                            excluded.color_histogram,
+                        embedding =
+                            excluded.embedding,
+                        image_hash =
+                            excluded.image_hash,
+                        width =
+                            excluded.width,
+                        height =
+                            excluded.height,
+                        file_size =
+                            excluded.file_size;
+                    """,
+                    (
+                        relative_path,
+                        color_blob,
+                        embedding_blob,
+                        hash_blob,
+                        width,
+                        height,
+                        file_size,
+                    ),
+                )
+
+            except sqlite3.Error as e:
+
+                print(
+                    f"[WARN] DB write failed for "
+                    f"{relative_path}: {e}"
+                )
+
+                skipped += 1
+                continue
+
+            count += 1
+            batch_count += 1
+
+            # -------------------------------------------------
+            # Commit periodically.
+            #
+            # This is important for very large collections
+            # because the database may contain 500,000+
+            # images.
+            # -------------------------------------------------
+
+            if batch_count >= commit_batch_size:
+
+                temp_db.connection.commit()
+
+                print(
+                    f"[OK] Committed batch of "
+                    f"{batch_count} "
+                    f"(total processed: {count}, "
+                    f"skipped: {skipped})"
+                )
+
+                batch_count = 0
+
+            # -------------------------------------------------
+            # Print progress information.
+            # -------------------------------------------------
+
+            if count % 200 == 0:
+
+                print(
+                    f"[INFO] Processed so far: "
+                    f"{count} "
+                    f"(skipped: {skipped})"
+                )
+
+        # -----------------------------------------------------
+        # Commit remaining images.
+        # -----------------------------------------------------
+
+        if batch_count > 0:
+
+            temp_db.connection.commit()
+
+            print(
+                f"[OK] Final commit of "
+                f"{batch_count} "
+                f"(total processed: {count}, "
+                f"skipped: {skipped})"
             )
 
         # -----------------------------------------------------
