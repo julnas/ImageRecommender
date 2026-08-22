@@ -123,6 +123,14 @@ def hash_to_bits_any(obj) -> Optional[np.ndarray]:
     try:
         if hasattr(obj, "hash"):
             return np.asarray(obj.hash, dtype=np.uint8).ravel()
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            raw = bytes(obj)
+            if len(raw) != 8:
+                return None
+            value = int.from_bytes(raw, byteorder="big", signed=False)
+            return np.unpackbits(
+                np.array([value], dtype=">u8").view(np.uint8)
+            ).astype(np.uint8)
         arr = np.asarray(obj)
         if arr.dtype == np.bool_:
             return arr.astype(np.uint8).ravel()
