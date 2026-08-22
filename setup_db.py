@@ -1,5 +1,6 @@
 import os
 import pickle
+import shutil
 import sqlite3
 import tempfile
 from typing import Optional
@@ -653,15 +654,239 @@ def scan_and_fill_database(
                 )
 
 
+# ----------------- Complete offline setup -----------------
+
+def _reserve_unused_path(
+    directory: str,
+    prefix: str,
+    suffix: str = "",
+) -> str:
+    """Return a unique path in directory without leaving a file behind."""
+
+    descriptor, path = tempfile.mkstemp(
+        prefix=prefix,
+        suffix=suffix,
+        dir=directory,
+    )
+    os.close(descriptor)
+    os.remove(path)
+    return path
+
+
+def _remove_artifact(path: Optional[str]):
+    """Remove a staged file or directory if it still exists."""
+
+    if path is None or not os.path.exists(path):
+        return
+
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
+
+
+def _install_database_and_indexes(
+    staged_db_path: str,
+    staged_index_dir: str,
+    db_path: str,
+    index_dir: str,
+):
+    """
+    Install a prepared database and index directory as one setup result.
+
+    Existing artifacts are moved to backup locations first and restored
+    if either installation step fails.
+    """
+
+    db_path = os.path.abspath(db_path)
+    index_dir = os.path.abspath(index_dir)
+
+    db_parent = os.path.dirname(db_path)
+    index_parent = os.path.dirname(index_dir)
+
+    os.makedirs(db_parent, exist_ok=True)
+    os.makedirs(index_parent, exist_ok=True)
+
+    old_db_path = None
+    old_index_dir = None
+    new_db_installed = False
+    new_indexes_installed = False
+
+    try:
+        if os.path.exists(db_path):
+            old_db_path = _reserve_unused_path(
+                db_parent,
+                prefix=".images_database_old_",
+                suffix=".db",
+            )
+            os.replace(db_path, old_db_path)
+
+        if os.path.exists(index_dir):
+            old_index_dir = _reserve_unused_path(
+                index_parent,
+                prefix=".indexes_old_",
+            )
+            os.replace(index_dir, old_index_dir)
+
+        os.replace(staged_db_path, db_path)
+        new_db_installed = True
+
+        os.replace(staged_index_dir, index_dir)
+        new_indexes_installed = True
+
+    except Exception:
+        if old_db_path is not None and os.path.exists(old_db_path):
+            os.replace(old_db_path, db_path)
+        elif new_db_installed:
+            _remove_artifact(db_path)
+
+        if old_index_dir is not None and os.path.exists(old_index_dir):
+            if new_indexes_installed and os.path.exists(index_dir):
+                _remove_artifact(index_dir)
+            os.replace(old_index_dir, index_dir)
+        elif new_indexes_installed:
+            _remove_artifact(index_dir)
+
+        raise
+
+    else:
+        for backup_path in (
+            old_db_path,
+            old_index_dir,
+        ):
+            try:
+                _remove_artifact(backup_path)
+            except OSError as error:
+                print(
+                    f"[WARN] New setup is installed, but an old "
+                    f"backup could not be removed: {error}"
+                )
+
+
+def run_offline_setup(
+    base_dir: str,
+    db_path: str = "images_database.db",
+    index_dir: str = "indexes",
+    max_images: Optional[int] = None,
+    commit_batch_size: int = 5000,
+):
+    """
+    Build the database and FAISS indexes through one safe setup command.
+
+    A full scan builds both artifacts in staging locations. The existing
+    database and indexes are replaced only after both builds succeed.
+    Limited scans requested with max_images never rebuild or replace the
+    production artifacts.
+    """
+
+    db_path = os.path.abspath(db_path)
+    index_dir = os.path.abspath(index_dir)
+
+    db_parent = os.path.dirname(db_path)
+    index_parent = os.path.dirname(index_dir)
+
+    os.makedirs(db_parent, exist_ok=True)
+    os.makedirs(index_parent, exist_ok=True)
+
+    staged_db_path = _reserve_unused_path(
+        db_parent,
+        prefix=".offline_setup_",
+        suffix=".db",
+    )
+    staged_index_dir = _reserve_unused_path(
+        index_parent,
+        prefix=".offline_indexes_",
+    )
+
+    try:
+        print(
+            "[SETUP] Step 1/2: scanning images and "
+            "building the database..."
+        )
+
+        database_ready = scan_and_fill_database(
+            base_dir=base_dir,
+            db_path=staged_db_path,
+            max_images=max_images,
+            commit_batch_size=commit_batch_size,
+        )
+
+        if max_images is not None:
+            print(
+                "[INFO] Limited scan finished. FAISS indexes "
+                "were not rebuilt and production artifacts "
+                "were preserved."
+            )
+            return False
+
+        if not database_ready:
+            print(
+                "[ERROR] Database scan failed. FAISS index "
+                "building was not started."
+            )
+            return False
+
+        print(
+            "[SETUP] Step 2/2: building FAISS indexes..."
+        )
+
+        from build_indexes import build_faiss_indexes
+
+        indexes_ready = build_faiss_indexes(
+            db_path=staged_db_path,
+            index_dir=staged_index_dir,
+        )
+
+        if not indexes_ready:
+            print(
+                "[ERROR] FAISS index building failed. Existing "
+                "database and indexes were preserved."
+            )
+            return False
+
+        print(
+            "[INFO] Installing new database and FAISS indexes..."
+        )
+
+        _install_database_and_indexes(
+            staged_db_path=staged_db_path,
+            staged_index_dir=staged_index_dir,
+            db_path=db_path,
+            index_dir=index_dir,
+        )
+
+        staged_db_path = None
+        staged_index_dir = None
+
+        print(
+            "[DONE] Complete offline setup finished successfully."
+        )
+        return True
+
+    except Exception as error:
+        print(
+            f"[ERROR] Complete offline setup failed: {error}"
+        )
+        print(
+            "[INFO] Existing database and indexes were preserved."
+        )
+        return False
+
+    finally:
+        _remove_artifact(staged_db_path)
+        _remove_artifact(staged_index_dir)
+
+
 # ----------------- Example -----------------
 
 if __name__ == "__main__":
 
     base_dir = "/Volumes/BigData03/data"
 
-    success = scan_and_fill_database(
+    success = run_offline_setup(
         base_dir=base_dir,
         db_path="images_database.db",
+        index_dir="indexes",
         max_images=None,
         commit_batch_size=5000,
     )
@@ -669,11 +894,7 @@ if __name__ == "__main__":
     if success:
 
         print(
-            "[OK] Database setup finished successfully."
-        )
-
-        print(
-            "[INFO] Next step: rebuild FAISS indexes."
+            "[OK] Database and FAISS setup finished successfully."
         )
 
     else:

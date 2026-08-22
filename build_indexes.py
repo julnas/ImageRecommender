@@ -69,7 +69,7 @@ def iter_color_histograms(conn):
 
 # ----------------- IVFPQ -----------------
 
-def build_ivfpq_index(output_dir):
+def build_ivfpq_index(output_dir, db_path=None):
     """
     Build an IVFPQ index for image embeddings.
 
@@ -78,7 +78,11 @@ def build_ivfpq_index(output_dir):
     during the build.
     """
 
-    conn = sqlite3.connect(DB_PATH)
+    db_path = os.path.abspath(
+        db_path or DB_PATH
+    )
+
+    conn = sqlite3.connect(db_path)
 
     ids = []
     vectors = []
@@ -199,7 +203,7 @@ def build_ivfpq_index(output_dir):
 
 # ----------------- HNSW Color -----------------
 
-def build_hnsw_color_index(output_dir):
+def build_hnsw_color_index(output_dir, db_path=None):
     """
     Build an HNSW index for color histograms.
 
@@ -208,7 +212,11 @@ def build_hnsw_color_index(output_dir):
     during the build.
     """
 
-    conn = sqlite3.connect(DB_PATH)
+    db_path = os.path.abspath(
+        db_path or DB_PATH
+    )
+
+    conn = sqlite3.connect(db_path)
 
     ids = []
     vectors = []
@@ -315,7 +323,10 @@ def build_hnsw_color_index(output_dir):
 
 # ----------------- Full FAISS setup -----------------
 
-def build_faiss_indexes():
+def build_faiss_indexes(
+    db_path=None,
+    index_dir=None,
+):
     """
     Build all FAISS indexes in a temporary directory.
 
@@ -327,8 +338,12 @@ def build_faiss_indexes():
         False -> build failed and existing indexes were preserved
     """
 
+    db_path = os.path.abspath(
+        db_path or DB_PATH
+    )
+
     index_dir = os.path.abspath(
-        INDEX_DIR
+        index_dir or INDEX_DIR
     )
 
     parent_dir = os.path.dirname(
@@ -356,11 +371,13 @@ def build_faiss_indexes():
         # -----------------------------------------------------
 
         build_ivfpq_index(
-            temp_index_dir
+            temp_index_dir,
+            db_path=db_path,
         )
 
         build_hnsw_color_index(
-            temp_index_dir
+            temp_index_dir,
+            db_path=db_path,
         )
 
         # -----------------------------------------------------
