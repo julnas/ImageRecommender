@@ -10,6 +10,7 @@ class Recommender:
         self.loader = loader
         self.metrics = metrics
         self.last_timings: Dict[str, Dict[str, float]] = {}
+        self.last_query_features: Dict[str, object] = {}
 
     # ---- Kombinationsfunktionen -------------------------------------------
     @staticmethod
@@ -144,6 +145,7 @@ class Recommender:
         """
         results: Dict[str, list] = {}
         self.last_timings = {}
+        self.last_query_features = {}
 
         for metric_name, metric in self.metrics.items():
             metric_start = perf_counter()
@@ -168,6 +170,7 @@ class Recommender:
                 query_vector = metric.compute_feature(input_image)
 
             feature_end = perf_counter()
+            self.last_query_features[metric_name] = query_vector
             similar_ids = metric.find_similar(query_vector, best_k=best_k)
             search_end = perf_counter()
             results[metric_name] = similar_ids

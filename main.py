@@ -13,6 +13,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 from time import perf_counter
 
+
+def evaluate_ann_recall(recommender, ann_results, k=5):
+    """Compare ANN top-k results with exact top-k database searches."""
+    for metric_name in ("color", "embedding"):
+        metric = recommender.metrics.get(metric_name)
+        query_feature = recommender.last_query_features.get(metric_name)
+
+        if metric is None or query_feature is None:
+            continue
+
+        exact_search_start = perf_counter()
+        exact_ids = metric.find_similar_exact(query_feature, best_k=k)
+        exact_search_seconds = perf_counter() - exact_search_start
+
+        ann_ids = ann_results.get(metric_name, [])[:k]
+        denominator = len(exact_ids)
+        overlap = len(set(ann_ids) & set(exact_ids))
+        recall = overlap / denominator if denominator else 0.0
+
+        print(
+            f"[QUALITY] {metric_name}: Recall@{k}={recall:.4f} "
+            f"({overlap}/{denominator}), "
+            f"exact_search={exact_search_seconds:.4f}s"
+        )
+
 def _make_vertical_montage(paths, max_width=320, pad=6, bg=255):
     """
     Baut ein einzelnes PIL-Image als vertikale Montage aus mehreren Pfaden.
@@ -115,8 +140,9 @@ def main():
     # ------------------------ CONFIG ------------------------
     db_path = "images_database.db"
     base_dir = "/Volumes/BigData03/data" # Basisverzeichnis für Bilder
-    comparing_image_path = [ "/Users/belizsenol/Downloads/Frucht.JPG"] # Pfad oder Liste von Pfaden zu Vergleichsbildern
+    comparing_image_path = [ "/Users/belizsenol/Downloads/IMG_8203.JPG"] # Pfad oder Liste von Pfaden zu Vergleichsbildern
     best_k = 5 # Anzahl der besten Ergebnisse, die zurückgegeben werden sollen
+    measure_recall = True  # Temporär: Recall@5 gegen exakte Suche messen
 
     # ------------------------ DB + Loader ------------------------
     db = Database(db_path)
@@ -165,7 +191,12 @@ def main():
     else:
         input_image = Image.open(comparing_image_path).convert("RGB")
     results = recommender.recommend(input_image, best_k=best_k)
-    print(f"[INFO] Recommendation took {perf_counter() - time_start:.2f} seconds")
+    recommendation_end = perf_counter()
+    print(f"[INFO] Recommendation took {recommendation_end - time_start:.2f} seconds")
+
+    if measure_recall:
+        evaluate_ann_recall(recommender, results, k=5)
+
     # ------------------------ Output ------------------------
     plot_topk_basic(results, best_k, loader, comparing_image_path)
 

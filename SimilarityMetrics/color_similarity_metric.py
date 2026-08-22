@@ -138,3 +138,30 @@ class ColorSimilarity:
 
         sims.sort(key=lambda x: x[1], reverse=True)
         return [img_id for img_id, _ in sims[:best_k]]
+
+    def find_similar_exact(
+        self,
+        query_feature: Tuple[Tuple[np.ndarray, ...], Tuple[np.ndarray, ...]],
+        best_k: int = 5,
+    ) -> list[int]:
+        """Return exact top-k results using HNSW's normalized L2 space."""
+        if best_k <= 0:
+            return []
+
+        cur = self.loader.db.cursor
+        cur.execute(
+            "SELECT image_id, color_histogram "
+            "FROM images WHERE color_histogram IS NOT NULL;"
+        )
+        rows = cur.fetchall()
+
+        query_vec = self._feature_to_vec(query_feature)
+        distances = []
+        for image_id, blob in rows:
+            stored_vec = self._feature_to_vec(pickle.loads(blob))
+            difference = query_vec - stored_vec
+            squared_l2 = float(np.dot(difference, difference))
+            distances.append((image_id, squared_l2))
+
+        distances.sort(key=lambda item: item[1])
+        return [image_id for image_id, _ in distances[:best_k]]

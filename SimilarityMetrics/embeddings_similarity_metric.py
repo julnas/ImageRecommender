@@ -195,3 +195,38 @@ class EmbeddingSimilarity:
 
         similarities.sort(key=lambda t: t[1], reverse=True)
         return [img_id for img_id, _ in similarities[:best_k]]
+
+    def find_similar_exact(
+        self,
+        query_vec: np.ndarray,
+        best_k: int = 5,
+    ) -> list[int]:
+        """Return exact top-k results using IVFPQ's normalized IP space."""
+        if best_k <= 0:
+            return []
+
+        query_vec = np.asarray(query_vec, dtype=np.float32)
+        if self.normalize:
+            query_norm = float(np.linalg.norm(query_vec))
+            if query_norm > 0.0:
+                query_vec = query_vec / query_norm
+
+        cur = self.loader.db.cursor
+        cur.execute(
+            "SELECT image_id, embedding "
+            "FROM images WHERE embedding IS NOT NULL;"
+        )
+        rows = cur.fetchall()
+
+        similarities: list[tuple[int, float]] = []
+        for image_id, emb_blob in rows:
+            stored_vec = pickle.loads(emb_blob).astype(np.float32, copy=False)
+            if self.normalize:
+                stored_norm = float(np.linalg.norm(stored_vec))
+                if stored_norm > 0.0:
+                    stored_vec = stored_vec / stored_norm
+            similarity = float(np.dot(query_vec, stored_vec))
+            similarities.append((image_id, similarity))
+
+        similarities.sort(key=lambda item: item[1], reverse=True)
+        return [image_id for image_id, _ in similarities[:best_k]]
