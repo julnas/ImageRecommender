@@ -52,9 +52,7 @@ class HashingSimilarity:
         self._cached_hashes: np.ndarray | None = None
 
         if self._bits > 64:
-            raise ValueError(
-                "hash_size must produce at most 64 bits."
-            )
+            raise ValueError("hash_size must produce at most 64 bits.")
 
     # --------------------------- Feature extraction ---------------------------
 
@@ -72,8 +70,7 @@ class HashingSimilarity:
             return Image.fromarray(image)
 
         raise TypeError(
-            "Supported input types: "
-            "PIL.Image, str (path), numpy.ndarray"
+            "Supported input types: " "PIL.Image, str (path), numpy.ndarray"
         )
 
     def compute_feature(
@@ -111,9 +108,7 @@ class HashingSimilarity:
         bits = hash_array.flatten()
 
         if len(bits) > 64:
-            raise ValueError(
-                "Hash contains more than 64 bits."
-            )
+            raise ValueError("Hash contains more than 64 bits.")
 
         value = 0
 
@@ -132,13 +127,10 @@ class HashingSimilarity:
 
         if len(hash_blob) != 8:
             raise ValueError(
-                f"Invalid hash size: expected 8 bytes, "
-                f"got {len(hash_blob)} bytes."
+                f"Invalid hash size: expected 8 bytes, " f"got {len(hash_blob)} bytes."
             )
 
-        return np.uint64(
-            int.from_bytes(hash_blob, byteorder="big", signed=False)
-        )
+        return np.uint64(int.from_bytes(hash_blob, byteorder="big", signed=False))
 
     @staticmethod
     def hash_to_uint64(
@@ -162,9 +154,7 @@ class HashingSimilarity:
 
         dist = h1 - h2
 
-        return 1.0 - (
-            dist / float(self._bits)
-        )
+        return 1.0 - (dist / float(self._bits))
 
     # --------------------------- Search ---------------------------
 
@@ -187,14 +177,12 @@ class HashingSimilarity:
             return self._cached_image_ids, self._cached_hashes
 
         cur = self.loader.db.cursor
-        cur.execute(
-            """
+        cur.execute("""
             SELECT image_id, image_hash
             FROM images
             WHERE image_hash IS NOT NULL
             ORDER BY image_id ASC
-            """
-        )
+            """)
         rows = cur.fetchall()
 
         image_ids = np.fromiter(
@@ -247,9 +235,7 @@ class HashingSimilarity:
         if best_k <= 0:
             return []
 
-        query_value = self.hash_to_uint64(
-            query_hash
-        )
+        query_value = self.hash_to_uint64(query_hash)
 
         image_ids, hashes = self._load_hash_cache()
 
@@ -278,13 +264,6 @@ class HashingSimilarity:
         )[:k]
 
         # Sort only the selected top-k results.
-        best_indices = best_indices[
-            np.argsort(
-                distances[best_indices]
-            )
-        ]
+        best_indices = best_indices[np.argsort(distances[best_indices])]
 
-        return [
-            int(image_ids[index])
-            for index in best_indices
-        ]
+        return [int(image_ids[index]) for index in best_indices]

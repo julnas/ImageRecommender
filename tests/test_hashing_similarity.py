@@ -30,7 +30,7 @@ def make_hash(enabled_bits=()):
 
 
 def test_hash_similarity_identity():
-    img = Image.new("RGB", (16,16), (0,0,0))
+    img = Image.new("RGB", (16, 16), (0, 0, 0))
     metric = HashingSimilarity(loader=None)
     h = metric.compute_feature(img)
     s = metric._similarity(h, h)
@@ -43,7 +43,9 @@ def test_hash_blob_is_exactly_eight_bytes_and_roundtrips():
     blob = HashingSimilarity.hash_to_blob(hash_value)
 
     assert len(blob) == 8
-    assert HashingSimilarity.blob_to_uint64(blob) == HashingSimilarity.hash_to_uint64(hash_value)
+    assert HashingSimilarity.blob_to_uint64(blob) == HashingSimilarity.hash_to_uint64(
+        hash_value
+    )
 
 
 def test_hash_search_uses_compact_values_and_caches_database_rows():

@@ -99,8 +99,6 @@ def test_scan_failure_preserves_existing_database(tmp_path, monkeypatch):
 
     assert succeeded is False
     connection = sqlite3.connect(db_path)
-    rows = connection.execute(
-        "SELECT file_path, image_hash FROM images"
-    ).fetchall()
+    rows = connection.execute("SELECT file_path, image_hash FROM images").fetchall()
     connection.close()
     assert rows == [("old_drive/old.jpg", b"\x01" * 8)]

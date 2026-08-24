@@ -42,9 +42,7 @@ class Recommender:
         """
 
         if not feature_list:
-            raise ValueError(
-                "combine_color_features: feature_list is empty."
-            )
+            raise ValueError("combine_color_features: feature_list is empty.")
 
         # Validate the expected feature structure.
         try:
@@ -104,25 +102,24 @@ class Recommender:
             rgb_lists + hsl_lists,
             channel_names,
         ):
-            lengths = {
-                arr.size
-                for arr in channel_list
-            }
+            lengths = {arr.size for arr in channel_list}
 
             if len(lengths) != 1:
                 raise ValueError(
-                    f"Channel {name} has inconsistent lengths: "
-                    f"{sorted(lengths)}"
+                    f"Channel {name} has inconsistent lengths: " f"{sorted(lengths)}"
                 )
 
         n = len(feature_list)
 
         # Use equal weights by default.
         if weights is None:
-            weights = np.ones(
-                n,
-                dtype=float,
-            ) / n
+            weights = (
+                np.ones(
+                    n,
+                    dtype=float,
+                )
+                / n
+            )
 
         else:
             weights = np.asarray(
@@ -132,16 +129,13 @@ class Recommender:
 
             if weights.size != n:
                 raise ValueError(
-                    "Number of weights must match "
-                    "the number of features."
+                    "Number of weights must match " "the number of features."
                 )
 
             weight_sum = weights.sum()
 
             if weight_sum <= 0:
-                raise ValueError(
-                    "Sum of weights must be greater than zero."
-                )
+                raise ValueError("Sum of weights must be greater than zero.")
 
             weights = weights / weight_sum
 
@@ -164,29 +158,17 @@ class Recommender:
 
             return combined
 
-        r = mix_channel(
-            rgb_lists[0]
-        )
+        r = mix_channel(rgb_lists[0])
 
-        g = mix_channel(
-            rgb_lists[1]
-        )
+        g = mix_channel(rgb_lists[1])
 
-        b = mix_channel(
-            rgb_lists[2]
-        )
+        b = mix_channel(rgb_lists[2])
 
-        h = mix_channel(
-            hsl_lists[0]
-        )
+        h = mix_channel(hsl_lists[0])
 
-        s = mix_channel(
-            hsl_lists[1]
-        )
+        s = mix_channel(hsl_lists[1])
 
-        l = mix_channel(
-            hsl_lists[2]
-        )
+        l = mix_channel(hsl_lists[2])
 
         return (
             r,
@@ -213,9 +195,7 @@ class Recommender:
         """
 
         if not embed_list:
-            raise ValueError(
-                "combine_embeddings: embed_list is empty."
-            )
+            raise ValueError("combine_embeddings: embed_list is empty.")
 
         embed_list = [
             np.asarray(
@@ -227,22 +207,14 @@ class Recommender:
 
         shape = embed_list[0].shape
 
-        if any(
-            embedding.shape != shape
-            for embedding in embed_list
-        ):
-            raise ValueError(
-                "All embeddings must have the same shape."
-            )
+        if any(embedding.shape != shape for embedding in embed_list):
+            raise ValueError("All embeddings must have the same shape.")
 
         if weights is None:
-            weights = (
-                np.ones(
-                    len(embed_list),
-                    dtype=float,
-                )
-                / len(embed_list)
-            )
+            weights = np.ones(
+                len(embed_list),
+                dtype=float,
+            ) / len(embed_list)
 
         else:
             weights = np.asarray(
@@ -252,27 +224,19 @@ class Recommender:
 
             if weights.size != len(embed_list):
                 raise ValueError(
-                    "Number of weights must match "
-                    "the number of embeddings."
+                    "Number of weights must match " "the number of embeddings."
                 )
 
             weight_sum = weights.sum()
 
             if weight_sum <= 0:
-                raise ValueError(
-                    "Sum of weights must be greater than zero."
-                )
+                raise ValueError("Sum of weights must be greater than zero.")
 
             weights = weights / weight_sum
 
         # Normalize each embedding first.
         normalized = [
-            embedding
-            / (
-                np.linalg.norm(embedding)
-                + 1e-12
-            )
-            for embedding in embed_list
+            embedding / (np.linalg.norm(embedding) + 1e-12) for embedding in embed_list
         ]
 
         combined = np.zeros_like(
@@ -287,10 +251,7 @@ class Recommender:
             combined += weight * embedding
 
         # Normalize the combined embedding.
-        combined /= (
-            np.linalg.norm(combined)
-            + 1e-12
-        )
+        combined /= np.linalg.norm(combined) + 1e-12
 
         return combined
 
@@ -321,9 +282,7 @@ class Recommender:
         """
 
         if not hash_list:
-            raise ValueError(
-                "combine_hashes_majority: hash_list is empty."
-            )
+            raise ValueError("combine_hashes_majority: hash_list is empty.")
 
         def to_bits(value):
             # imagehash.ImageHash
@@ -351,28 +310,15 @@ class Recommender:
                 ).ravel()
 
                 # Convert values to binary.
-                return (
-                    array != 0
-                ).astype(
-                    np.uint8
-                )
+                return (array != 0).astype(np.uint8)
 
-            raise TypeError(
-                "Unsupported hash type: "
-                f"{type(value).__name__}"
-            )
+            raise TypeError("Unsupported hash type: " f"{type(value).__name__}")
 
         # Convert all hashes to flat bit arrays.
-        bit_arrays = [
-            to_bits(hash_value)
-            for hash_value in hash_list
-        ]
+        bit_arrays = [to_bits(hash_value) for hash_value in hash_list]
 
         # All hashes must have the same number of bits.
-        bit_lengths = {
-            array.size
-            for array in bit_arrays
-        }
+        bit_lengths = {array.size for array in bit_arrays}
 
         if len(bit_lengths) != 1:
             raise ValueError(
@@ -390,38 +336,22 @@ class Recommender:
             hash_shape = first_hash.hash.shape
 
         else:
-            hash_shape = (
-                bit_arrays[0].shape
-            )
+            hash_shape = bit_arrays[0].shape
 
         # Shape:
         #   number of hashes x number of bits
-        array_2d = np.vstack(
-            bit_arrays
-        )
+        array_2d = np.vstack(bit_arrays)
 
         # Count the number of votes for bit = 1.
-        votes = array_2d.sum(
-            axis=0
-        )
+        votes = array_2d.sum(axis=0)
 
         # Majority vote.
-        majority = (
-            votes
-            >= (
-                array_2d.shape[0]
-                / 2
-            )
-        )
+        majority = votes >= (array_2d.shape[0] / 2)
 
         # Restore the original hash shape.
-        majority = majority.reshape(
-            hash_shape
-        )
+        majority = majority.reshape(hash_shape)
 
-        return ImageHash(
-            majority
-        )
+        return ImageHash(majority)
 
     # -------------------------------------------------------------------------
     # Recommendation
@@ -440,9 +370,7 @@ class Recommender:
         """
 
         if best_k <= 0:
-            raise ValueError(
-                "best_k must be greater than zero."
-            )
+            raise ValueError("best_k must be greater than zero.")
 
         results: Dict[str, list] = {}
         self.last_timings = {}
@@ -452,27 +380,14 @@ class Recommender:
 
             if isinstance(input_image, list):
                 if not input_image:
-                    raise ValueError(
-                        "recommend: input_image is an empty list."
-                    )
+                    raise ValueError("recommend: input_image is an empty list.")
 
-                feature_list = [
-                    metric.compute_feature(image)
-                    for image in input_image
-                ]
+                feature_list = [metric.compute_feature(image) for image in input_image]
 
                 if metric_name == "color":
-                    query_vector = (
-                        Recommender.combine_color_features(
-                            feature_list
-                        )
-                    )
+                    query_vector = Recommender.combine_color_features(feature_list)
                 elif metric_name == "embedding":
-                    query_vector = (
-                        Recommender.combine_embeddings(
-                            feature_list
-                        )
-                    )
+                    query_vector = Recommender.combine_embeddings(feature_list)
                 elif metric_name in (
                     "hash",
                     "hashing",
@@ -480,20 +395,13 @@ class Recommender:
                     "dhash",
                     "ahash",
                 ):
-                    query_vector = (
-                        Recommender.combine_hashes_majority(
-                            feature_list
-                        )
-                    )
+                    query_vector = Recommender.combine_hashes_majority(feature_list)
                 else:
                     raise ValueError(
-                        "Unknown metric for list fusion: "
-                        f"{metric_name}"
+                        "Unknown metric for list fusion: " f"{metric_name}"
                     )
             else:
-                query_vector = metric.compute_feature(
-                    input_image
-                )
+                query_vector = metric.compute_feature(input_image)
 
             feature_end = perf_counter()
 
@@ -506,15 +414,9 @@ class Recommender:
             results[metric_name] = similar_ids
 
             timing = {
-                "feature_seconds": (
-                    feature_end - metric_start
-                ),
-                "search_seconds": (
-                    search_end - feature_end
-                ),
-                "total_seconds": (
-                    search_end - metric_start
-                ),
+                "feature_seconds": (feature_end - metric_start),
+                "search_seconds": (search_end - feature_end),
+                "total_seconds": (search_end - metric_start),
             }
 
             self.last_timings[metric_name] = timing
