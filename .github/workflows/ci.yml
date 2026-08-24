@@ -10,7 +10,8 @@ jobs:
   test-and-format:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: .  
+      PYTHONPATH: .
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       - name: Checkout repository
@@ -24,9 +25,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
-      - name: Run Black (auto-format)
-        run: black .
+      - name: Check formatting with Black
+        run: black --check .
 
       - name: Run Pytest
-        run: pytest tests/
+        run: pytest tests/ -q

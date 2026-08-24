@@ -7,12 +7,12 @@ import tempfile
 import faiss
 import numpy as np
 
-
 DB_PATH = "images_database.db"
 INDEX_DIR = "indexes"
 
 
 # ----------------- Database helpers -----------------
+
 
 def iter_embeddings(conn):
     """
@@ -21,14 +21,12 @@ def iter_embeddings(conn):
 
     cur = conn.cursor()
 
-    cur.execute(
-        """
+    cur.execute("""
         SELECT image_id, embedding
         FROM images
         WHERE embedding IS NOT NULL
         ORDER BY image_id ASC
-        """
-    )
+        """)
 
     while True:
         rows = cur.fetchmany(5000)
@@ -48,14 +46,12 @@ def iter_color_histograms(conn):
 
     cur = conn.cursor()
 
-    cur.execute(
-        """
+    cur.execute("""
         SELECT image_id, color_histogram
         FROM images
         WHERE color_histogram IS NOT NULL
         ORDER BY image_id ASC
-        """
-    )
+        """)
 
     while True:
         rows = cur.fetchmany(5000)
@@ -68,6 +64,7 @@ def iter_color_histograms(conn):
 
 
 # ----------------- IVFPQ -----------------
+
 
 def build_ivfpq_index(output_dir):
     """
@@ -102,9 +99,7 @@ def build_ivfpq_index(output_dir):
         conn.close()
 
     if not vectors:
-        raise RuntimeError(
-            "No embeddings found in database."
-        )
+        raise RuntimeError("No embeddings found in database.")
 
     x = np.vstack(vectors).astype(
         np.float32,
@@ -123,7 +118,7 @@ def build_ivfpq_index(output_dir):
     nlist = max(
         64,
         min(
-            int(n ** 0.5),
+            int(n**0.5),
             n // 4,
         ),
     )
@@ -147,17 +142,12 @@ def build_ivfpq_index(output_dir):
         8,
     )
 
-    print(
-        f"[IVFPQ] Training with {n} vectors, "
-        f"dim={d}, nlist={nlist}, m={m}"
-    )
+    print(f"[IVFPQ] Training with {n} vectors, " f"dim={d}, nlist={nlist}, m={m}")
 
     index.train(x)
 
     if not index.is_trained:
-        raise RuntimeError(
-            "IVFPQ index training failed."
-        )
+        raise RuntimeError("IVFPQ index training failed.")
 
     index.add_with_ids(
         x,
@@ -176,9 +166,7 @@ def build_ivfpq_index(output_dir):
         index_path,
     )
 
-    print(
-        f"[IVFPQ] Saved index to {index_path}"
-    )
+    print(f"[IVFPQ] Saved index to {index_path}")
 
     # Save the corresponding image IDs.
     ids_path = os.path.join(
@@ -192,12 +180,11 @@ def build_ivfpq_index(output_dir):
             f,
         )
 
-    print(
-        f"[IVFPQ] Saved ID order to {ids_path}"
-    )
+    print(f"[IVFPQ] Saved ID order to {ids_path}")
 
 
 # ----------------- HNSW Color -----------------
+
 
 def build_hnsw_color_index(output_dir):
     """
@@ -248,9 +235,7 @@ def build_hnsw_color_index(output_dir):
         conn.close()
 
     if not vectors:
-        raise RuntimeError(
-            "No color histograms found in database."
-        )
+        raise RuntimeError("No color histograms found in database.")
 
     x = np.vstack(vectors).astype(
         np.float32,
@@ -272,9 +257,7 @@ def build_hnsw_color_index(output_dir):
 
     hnsw.hnsw.efConstruction = 4096
 
-    index = faiss.IndexIDMap2(
-        hnsw
-    )
+    index = faiss.IndexIDMap2(hnsw)
 
     index.add_with_ids(
         x,
@@ -291,10 +274,7 @@ def build_hnsw_color_index(output_dir):
         index_path,
     )
 
-    print(
-        f"[HNSW] Saved index with "
-        f"{len(ids)} vectors to {index_path}"
-    )
+    print(f"[HNSW] Saved index with " f"{len(ids)} vectors to {index_path}")
 
     # Save the corresponding image IDs.
     ids_path = os.path.join(
@@ -308,12 +288,11 @@ def build_hnsw_color_index(output_dir):
             f,
         )
 
-    print(
-        f"[HNSW] Saved ID order to {ids_path}"
-    )
+    print(f"[HNSW] Saved ID order to {ids_path}")
 
 
 # ----------------- Full FAISS setup -----------------
+
 
 def build_faiss_indexes():
     """
@@ -327,13 +306,9 @@ def build_faiss_indexes():
         False -> build failed and existing indexes were preserved
     """
 
-    index_dir = os.path.abspath(
-        INDEX_DIR
-    )
+    index_dir = os.path.abspath(INDEX_DIR)
 
-    parent_dir = os.path.dirname(
-        index_dir
-    )
+    parent_dir = os.path.dirname(index_dir)
 
     os.makedirs(
         parent_dir,
@@ -345,23 +320,16 @@ def build_faiss_indexes():
         dir=parent_dir,
     )
 
-    print(
-        f"[INFO] Building FAISS indexes in "
-        f"temporary directory: {temp_index_dir}"
-    )
+    print(f"[INFO] Building FAISS indexes in " f"temporary directory: {temp_index_dir}")
 
     try:
         # -----------------------------------------------------
         # Build all indexes in the temporary directory.
         # -----------------------------------------------------
 
-        build_ivfpq_index(
-            temp_index_dir
-        )
+        build_ivfpq_index(temp_index_dir)
 
-        build_hnsw_color_index(
-            temp_index_dir
-        )
+        build_hnsw_color_index(temp_index_dir)
 
         # -----------------------------------------------------
         # Verify that all expected files exist before replacing
@@ -382,19 +350,14 @@ def build_faiss_indexes():
             )
 
             if not os.path.isfile(path):
-                raise RuntimeError(
-                    f"Expected FAISS output is missing: "
-                    f"{path}"
-                )
+                raise RuntimeError(f"Expected FAISS output is missing: " f"{path}")
 
         # -----------------------------------------------------
         # Verify that the generated indexes can actually be
         # opened again before installing them.
         # -----------------------------------------------------
 
-        print(
-            "[INFO] Verifying generated FAISS indexes..."
-        )
+        print("[INFO] Verifying generated FAISS indexes...")
 
         emb_index = faiss.read_index(
             os.path.join(
@@ -411,24 +374,14 @@ def build_faiss_indexes():
         )
 
         if emb_index.ntotal == 0:
-            raise RuntimeError(
-                "Generated embedding FAISS index is empty."
-            )
+            raise RuntimeError("Generated embedding FAISS index is empty.")
 
         if color_index.ntotal == 0:
-            raise RuntimeError(
-                "Generated color FAISS index is empty."
-            )
+            raise RuntimeError("Generated color FAISS index is empty.")
 
-        print(
-            f"[OK] Embedding index contains "
-            f"{emb_index.ntotal} vectors."
-        )
+        print(f"[OK] Embedding index contains " f"{emb_index.ntotal} vectors.")
 
-        print(
-            f"[OK] Color index contains "
-            f"{color_index.ntotal} vectors."
-        )
+        print(f"[OK] Color index contains " f"{color_index.ntotal} vectors.")
 
         # -----------------------------------------------------
         # Close Python references before replacing the directory.
@@ -465,9 +418,7 @@ def build_faiss_indexes():
             )
 
         try:
-            print(
-                "[INFO] Installing new FAISS indexes..."
-            )
+            print("[INFO] Installing new FAISS indexes...")
 
             os.replace(
                 temp_index_dir,
@@ -496,29 +447,17 @@ def build_faiss_indexes():
         # The old indexes are no longer needed.
         # -----------------------------------------------------
 
-        if (
-            old_index_dir is not None
-            and os.path.exists(old_index_dir)
-        ):
-            shutil.rmtree(
-                old_index_dir
-            )
+        if old_index_dir is not None and os.path.exists(old_index_dir):
+            shutil.rmtree(old_index_dir)
 
-        print(
-            "[DONE] All FAISS indexes rebuilt "
-            "and installed successfully."
-        )
+        print("[DONE] All FAISS indexes rebuilt " "and installed successfully.")
 
         return True
 
     except Exception as e:
-        print(
-            f"[ERROR] FAISS setup failed: {e}"
-        )
+        print(f"[ERROR] FAISS setup failed: {e}")
 
-        print(
-            "[INFO] Existing FAISS indexes were preserved."
-        )
+        print("[INFO] Existing FAISS indexes were preserved.")
 
         return False
 
@@ -527,24 +466,14 @@ def build_faiss_indexes():
         # Remove incomplete temporary index directory.
         # -----------------------------------------------------
 
-        if (
-            temp_index_dir is not None
-            and os.path.exists(temp_index_dir)
-        ):
+        if temp_index_dir is not None and os.path.exists(temp_index_dir):
             try:
-                shutil.rmtree(
-                    temp_index_dir
-                )
+                shutil.rmtree(temp_index_dir)
 
-                print(
-                    "[INFO] Temporary FAISS directory removed."
-                )
+                print("[INFO] Temporary FAISS directory removed.")
 
             except OSError as e:
-                print(
-                    f"[WARN] Could not remove temporary "
-                    f"FAISS directory: {e}"
-                )
+                print(f"[WARN] Could not remove temporary " f"FAISS directory: {e}")
 
 
 # ----------------- Example -----------------
@@ -554,10 +483,6 @@ if __name__ == "__main__":
     success = build_faiss_indexes()
 
     if success:
-        print(
-            "[OK] FAISS setup finished successfully."
-        )
+        print("[OK] FAISS setup finished successfully.")
     else:
-        print(
-            "[ERROR] FAISS setup failed."
-        )
+        print("[ERROR] FAISS setup failed.")

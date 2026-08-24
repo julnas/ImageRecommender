@@ -24,8 +24,7 @@ def image_store(tmp_path):
 
     db_path = tmp_path / "images.db"
     connection = sqlite3.connect(db_path)
-    connection.execute(
-        """
+    connection.execute("""
         CREATE TABLE images (
             image_id INTEGER PRIMARY KEY,
             file_path TEXT NOT NULL UNIQUE,
@@ -36,17 +35,13 @@ def image_store(tmp_path):
             height INTEGER,
             file_size INTEGER
         )
-        """
-    )
+        """)
     connection.executemany(
         """
         INSERT INTO images (image_id, file_path, width, height)
         VALUES (?, ?, ?, ?)
         """,
-        [
-            (image_id, filename, 16, 12)
-            for image_id, filename, _ in test_images
-        ],
+        [(image_id, filename, 16, 12) for image_id, filename, _ in test_images],
     )
     connection.commit()
     connection.close()

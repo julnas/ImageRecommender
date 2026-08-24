@@ -18,9 +18,7 @@ def test_load_image(image_store):
 def test_load_image_by_path(image_store):
     loader = ImageLoader(None, base_dir=str(image_store["image_dir"]))
 
-    image = loader.load_image_by_path(
-        str(image_store["image_dir"] / "green.png")
-    )
+    image = loader.load_image_by_path(str(image_store["image_dir"] / "green.png"))
 
     assert image is not None
     assert image.mode == "RGB"
@@ -30,8 +28,6 @@ def test_load_image_by_path(image_store):
 def test_load_image_by_path_returns_none_for_missing_file(image_store):
     loader = ImageLoader(None, base_dir=str(image_store["image_dir"]))
 
-    image = loader.load_image_by_path(
-        str(image_store["image_dir"] / "missing.png")
-    )
+    image = loader.load_image_by_path(str(image_store["image_dir"] / "missing.png"))
 
     assert image is None

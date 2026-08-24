@@ -42,24 +42,19 @@ def test_project_index_builder_creates_readable_indexes(tmp_path, monkeypatch):
     db_path = tmp_path / "images.db"
     index_dir = tmp_path / "indexes"
     connection = sqlite3.connect(db_path)
-    connection.execute(
-        """
+    connection.execute("""
         CREATE TABLE images (
             image_id INTEGER PRIMARY KEY,
             color_histogram BLOB,
             embedding BLOB
         )
-        """
-    )
+        """)
 
     rng = np.random.default_rng(7)
 
     for image_id in range(1, 257):
         embedding = rng.random(16, dtype=np.float32)
-        channels = tuple(
-            rng.random(2, dtype=np.float32)
-            for _ in range(6)
-        )
+        channels = tuple(rng.random(2, dtype=np.float32) for _ in range(6))
         color_feature = (channels[:3], channels[3:])
         connection.execute(
             """

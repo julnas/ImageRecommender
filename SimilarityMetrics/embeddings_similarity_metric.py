@@ -32,7 +32,12 @@ from torchvision import models, transforms
 class EmbeddingSimilarity:
     """Deep embedding similarity powered by a ResNet18 backbone."""
 
-    def __init__(self, loader: Any, device: Optional[str] = None, normalize: bool = True,) -> None:
+    def __init__(
+        self,
+        loader: Any,
+        device: Optional[str] = None,
+        normalize: bool = True,
+    ) -> None:
         self.loader = loader
         self.device = device or ("cuda" if False else "cpu")
         self.normalize = normalize

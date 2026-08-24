@@ -1,104 +1,122 @@
-# Bildempfehlungssystem – Big Data Projekt
+# Bildempfehlungssystem – Big-Data-Projekt
 
 ## 1. Ziel des Projekts
-Dieses Projekt ist im Rahmen des Kurses **„Big Data“** entstanden.  
-Es handelt sich um ein **Bildempfehlungssystem**, das ein Eingabebild mit einem großen Bilddatensatz anhand mehrerer Ähnlichkeitsmetriken vergleicht:
 
-- **Farbe** (Farb-Histogramme)  
-- **Hashing** (Perceptual Hash)  
-- **Embeddings** (z. B. Vektor-Repräsentationen aus Modellen)  
+Dieses Projekt ist ein Bildempfehlungssystem, das ein Eingabebild anhand von
+drei Ähnlichkeitsmetriken mit einer großen Bildsammlung vergleicht:
 
-Zur **Verbesserung der Skalierbarkeit** werden schnelle Approximate Nearest Neighbor (**ANN**)-Suchverfahren eingesetzt.
+- Farbhistogramme
+- visuelle Embeddings
+- Average Hash (aHash)
 
----
+Für die Farb- und Embeddingsuche werden FAISS-Indizes für schnelle
+Approximate-Nearest-Neighbor-Suchen (ANN) verwendet. Die kompakten Hashwerte
+werden direkt über ihre Hamming-Distanz verglichen.
 
-## 2. Programmdesign & Architektur
-Die Architektur besteht aus drei Schritten:
+## 2. Architektur
 
-### 2.1 Speichern
-- Ausführen von `setup_db.py`  
-- Das Skript verarbeitet alle Bilder im angegebenen Ordner und berechnet:  
-  - Farb-Histogramme  
-  - Embeddings  
-  - Perceptual Hashes  
-- Speicherung in **SQLite-Datenbank `images.db`**  
-  - Features werden als Pickle-BLOBs abgelegt (z. B. NumPy-Vektoren)  
-  - Metadaten und Dateipfade werden ebenfalls gespeichert  
-- Zusätzlich wird eine Debug-Kopie `image_metrics.pkl` erstellt (lesbares Format: Listen, Strings, Zahlen).  
+Das Projekt besteht aus einer Offline-Vorbereitung und einer Online-Suche.
 
-### 2.2 Indizieren
-- Ausführen von `build_indexes.py`  
-- Die gespeicherten Merkmale werden aus der Datenbank geladen und in **FAISS-Indizes** überführt:  
-  - **Embeddings** → IVF-PQ Index  
-  - **Farb-Histogramme** → HNSW Index  
-- Indizes werden als `.faiss`-Dateien gespeichert.  
-- Vorteil: schnelle ANN-Suche im Gegensatz zur „rohen“ Datenbank.  
+### 2.1 Datenbank aufbauen
 
-### 2.3 Suchen
-- Ausführen von `main.py` mit Pfad zu einem Eingabebild.  
-- Schritte:  
-  1. Features für das neue Bild berechnen  
-  2. Suche in FAISS-Indizes nach ähnlichen Kandidaten  
-  3. Zusätzliche Infos bei Bedarf aus der Datenbank holen  
-  4. Ergebnisse der drei Vergleiche (Embedding, Farbe, Hash) zusammenführen  
-  5. Sortierte Ergebnisliste zurückgeben  
+`setup_db.py` durchsucht den konfigurierten Bildordner rekursiv. Für jedes
+gültige Bild werden Farbhistogramm, Embedding, aHash und Metadaten berechnet.
+Die Ergebnisse werden in `images_database.db` gespeichert. Farbhistogramme und
+Embeddings liegen als Pickle-BLOBs vor, während der Hash als kompakter
+8-Byte-BLOB gespeichert wird. Dateipfade werden relativ zum ausgewählten
+Bildordner abgelegt.
 
-⚡ **Wichtig:**  
-- `setup_db.py` und `build_indexes.py` müssen nur **einmal** ausgeführt werden (Initialisierung).  
-- Danach reicht es, mit `main.py` zu arbeiten.
+Der Aufbau erfolgt zunächst in einer temporären Datenbank. Die bestehende
+Datenbank wird erst ersetzt, wenn der vollständige Scan erfolgreich beendet
+wurde. Ein fehlgeschlagener Scan lässt den vorherigen Stand unverändert.
 
----
+### 2.2 FAISS-Indizes aufbauen
 
-## 3. Klassendesign
-Alle drei Metriken folgen dem gleichen Muster:
+`build_indexes.py` liest die gespeicherten Merkmale aus der Datenbank und
+erzeugt zwei Suchindizes:
 
-- **ColorSimilarity**  
-- **HashingSimilarity**  
-- **EmbeddingSimilarity**
+- Embeddings: IVF-PQ
+- Farbhistogramme: HNSW
 
-Jede Klasse umfasst drei Kernbereiche:
+Die Dateien werden im Ordner `indexes/` gespeichert. Auch hier werden neue
+Indizes zunächst in einem temporären Ordner erstellt und erst nach erfolgreicher
+Prüfung installiert.
 
-1. `compute_feature()`  
-   - Berechnet Feature-Vektor bzw. Hash aus einem Bild  
+### 2.3 Ähnliche Bilder suchen
 
-2. **Index-Handling**  
-   - Bauen / Laden von FAISS-Indizes (bei Farbe & Embeddings)  
+`main.py` berechnet die Merkmale eines oder mehrerer Eingabebilder und führt
+die Suche für alle aktivierten Metriken aus. Farbe und Embeddings verwenden die
+FAISS-Indizes. Die Hashsuche arbeitet mit den in den Arbeitsspeicher geladenen
+8-Byte-Hashes. Das Programm gibt für jede Metrik eine eigene Top-k-Liste aus
+und stellt die Referenz- und Ergebnisbilder grafisch dar.
 
-3. `find_similar()`  
-   - Suche nach ähnlichen Bildern  
-   - Zwei Modi:  
-     - **ANN-Search** über FAISS (schnell)  
-     - **Fallback:** Vollständiger Scan der Datenbank (falls kein Index vorhanden)  
+## 3. Installation
 
----
+Empfohlen wird Python 3.11 mit einer virtuellen Umgebung:
 
-## 4. Installation & Nutzung
-
-### Voraussetzungen
-- Python 3.8+  
-- Abhängigkeiten (z. B. in `requirements.txt`):  
-  - `faiss`  
-  - `numpy`  
-  - `opencv-python`  
-  - `sqlite3` (Standardbibliothek)  
-  - `pickle` (Standardbibliothek)  
-
-### Setup
 ```bash
-# 1. Datenbank aufbauen
-python setup_db.py --input <Bilderordner>
-
-# 2. Indizes erstellen
-python build_indexes.py
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
-### Suche starten
+Für Tests und Formatierungsprüfungen werden zusätzlich die
+Entwicklungsabhängigkeiten benötigt:
+
 ```bash
-python main.py --query <pfad/zum/bild.jpg>
+uv pip install --python .venv/bin/python -r requirements-dev.txt
 ```
 
----
+## 4. Ausführung
 
-## 5. Ergebnis
-- Ausgabe: Liste ähnlicher Bilder, sortiert nach Relevanz  
-- Kombination der drei Metriken für robustere Ergebnisse  
+### 4.1 Offline-Vorbereitung
+
+1. In `setup_db.py` am Ende der Datei `base_dir` auf den Bildordner setzen.
+2. Falls nötig `db_path`, `max_images` oder `commit_batch_size` anpassen.
+3. Datenbank aufbauen:
+
+```bash
+.venv/bin/python setup_db.py
+```
+
+4. Danach die FAISS-Indizes aus der fertigen Datenbank erzeugen:
+
+```bash
+.venv/bin/python build_indexes.py
+```
+
+Die Offline-Vorbereitung muss erneut ausgeführt werden, wenn eine andere
+Bildsammlung verwendet oder der bestehende Datenbestand verändert wird.
+
+### 4.2 Online-Suche
+
+In `main.py` im Konfigurationsbereich folgende Werte anpassen:
+
+- `db_path`: Pfad zur Datenbank
+- `base_dir`: Basisordner der gespeicherten Bilder
+- `comparing_image_path`: einzelner Bildpfad oder Liste von Bildpfaden
+- `best_k`: Anzahl der Treffer pro Metrik
+- `metrics`: aktivierte Ähnlichkeitsmetriken
+
+Anschließend die Suche starten:
+
+```bash
+.venv/bin/python main.py
+```
+
+## 5. Qualitätssicherung
+
+Formatierung prüfen:
+
+```bash
+.venv/bin/black --check .
+```
+
+Tests ausführen:
+
+```bash
+.venv/bin/python -m pytest tests -q
+```
+
+Die GitHub-Actions-Pipeline führt beide Prüfungen automatisch für Pushes und
+Pull Requests auf `main` aus.
