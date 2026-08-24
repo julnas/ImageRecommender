@@ -1,27 +1,14 @@
-from image_recommender.database import Database
-
-
-# testing get_all_image_ids
-def test_get_all_image_ids():
-    db = Database("images.db")
+def test_get_all_image_ids(image_store):
+    db = image_store["db"]
     ids = db.get_all_image_ids()
-    db.close()
-    assert isinstance(ids, list)
-    assert all(isinstance(i, int) for i in ids)
+
+    assert len(ids) == 3
+    assert set(ids) == {1, 2, 3}
+    assert all(isinstance(image_id, int) for image_id in ids)
 
 
-# testing get_image_path
-def test_get_image_path():
-    db = Database("images.db")
-    ids = db.get_all_image_ids()
-    if ids:
-        path = db.get_image_path(ids[0])
-        assert isinstance(path, str)
-    db.close()
+def test_get_image_path(image_store):
+    db = image_store["db"]
 
-
-"""
-use: 
-cd ImageRecommender/
-PYTHONPATH=. pytest tests/
-"""
+    assert db.get_image_path(1) == "red.png"
+    assert db.get_image_path(999) is None

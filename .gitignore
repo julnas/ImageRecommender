@@ -1,1 +1,6 @@
 images_database.db
+images.db
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
